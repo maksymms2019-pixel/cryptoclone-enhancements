@@ -74,7 +74,10 @@ const STYLES: ChartStyle[] = [
 export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
-  const [tf, setTf] = useState<TF>(TIMEFRAMES[3]);
+  const [tf, setTf] = useState<TF>(TIMEFRAMES[5]); // 1D default
+  const [style, setStyle] = useState<ChartStyle>(STYLES[0]);
+  const [showVolume, setShowVolume] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   const sym = tvSymbol(coinId, symbol);
 
   useEffect(() => {
@@ -102,17 +105,15 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       interval: tf.interval,
       timezone: "Europe/Kiev",
       theme: "dark",
-      style: "1",
+      style: style.value,
       locale: "uk",
       backgroundColor: "#06141C",
       gridColor: "rgba(231, 182, 80, 0.05)",
       toolbar_bg: "#06141C",
-      // Full TradingView toolset enabled: top toolbar (chart type, indicators,
-      // intervals, settings) + left drawing toolbar + date-range selector.
       hide_top_toolbar: false,
       hide_side_toolbar: false,
       hide_legend: false,
-      hide_volume: false,
+      hide_volume: !showVolume,
       withdateranges: true,
       allow_symbol_change: false,
       details: false,
@@ -131,34 +132,66 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       cancelled = true;
       try { if (container) container.innerHTML = ""; } catch { /* ignore TV teardown */ }
     };
-  }, [sym, tf]);
+  }, [sym, tf, style, showVolume]);
 
   return (
     <div
-      className="surface overflow-hidden p-2"
-      style={{ border: "1px solid rgba(231,182,80,.18)" }}
+      className={fullscreen
+        ? "fixed inset-0 z-[100] flex flex-col gap-2 bg-[var(--bg-base)] p-3"
+        : "surface overflow-hidden p-2"}
+      style={fullscreen ? undefined : { border: "1px solid rgba(231,182,80,.18)" }}
     >
-      {/* Quick timeframe shortcut row */}
-      <div className="flex items-center justify-between gap-2 px-1 pt-0.5 pb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-0.5 pb-2">
         <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
           Графік · {symbol.toUpperCase()}
         </div>
-        <div className="flex gap-1">
-          {TIMEFRAMES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTf(t)}
-              className="chip text-[10px] px-2 py-1"
-              data-active={t.id === tf.id}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex gap-1">
+            {TIMEFRAMES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTf(t)}
+                className="chip text-[10px] px-2 py-1"
+                data-active={t.id === tf.id}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <span className="mx-1 h-4 w-px bg-[rgba(255,255,255,.08)]" />
+          <div className="flex gap-1">
+            {STYLES.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setStyle(s)}
+                className="chip text-[10px] px-2 py-1"
+                data-active={s.id === style.id}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <span className="mx-1 h-4 w-px bg-[rgba(255,255,255,.08)]" />
+          <button
+            onClick={() => setShowVolume((v) => !v)}
+            className="chip text-[10px] px-2 py-1"
+            data-active={showVolume}
+            title="Обʼєм"
+          >
+            Обʼєм
+          </button>
+          <button
+            onClick={() => setFullscreen((f) => !f)}
+            className="chip text-[10px] px-2 py-1"
+            title={fullscreen ? "Згорнути" : "На весь екран"}
+          >
+            {fullscreen ? "✕" : "⛶"}
+          </button>
         </div>
       </div>
       <div
         className="relative w-full overflow-hidden rounded-xl"
-        style={{ height: 540, background: "#06141C" }}
+        style={{ height: fullscreen ? "100%" : 600, background: "#06141C", flex: fullscreen ? 1 : undefined }}
       >
         <div ref={containerRef} className="tradingview-widget-container h-full w-full" />
         {!ready && (
@@ -167,9 +200,11 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
           </div>
         )}
       </div>
-      <p className="px-1 pt-2 text-[10px] text-[var(--text-muted)]">
-        Тип свічок, індикатори, інструменти малювання — у верхній панелі графіку.
-      </p>
+      {!fullscreen && (
+        <p className="px-1 pt-2 text-[10px] text-[var(--text-muted)]">
+          Індикатори, інструменти малювання та порівняння — у верхній/боковій панелі графіку TradingView.
+        </p>
+      )}
     </div>
   );
 }
