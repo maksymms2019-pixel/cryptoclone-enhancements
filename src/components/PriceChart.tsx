@@ -166,7 +166,7 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       cancelled = true;
       try { if (container) container.innerHTML = ""; } catch { /* ignore TV teardown */ }
     };
-  }, [sym, tf, style, showVolume]);
+  }, [sym, tf, style, showVolume, showEMAs]);
 
   return (
     <div
@@ -213,6 +213,14 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
             title="Обʼєм"
           >
             Обʼєм
+          </button>
+          <button
+            onClick={() => setShowEMAs((v) => !v)}
+            className="chip text-[10px] px-2 py-1"
+            data-active={showEMAs}
+            title="EMA 7 / 14 / 28"
+          >
+            EMA
           </button>
           <button
             onClick={() => setFullscreen((f) => !f)}
