@@ -273,38 +273,48 @@ function clusterKey(title: string): string {
   return uniq.slice(0, 4).sort().join("-") || title.slice(0, 24);
 }
 
-// ---- Ukrainian translation (Lovable AI Gateway) -------------------------
+// ---- Ukrainian translation (direct Google Gemini) ----------------------
 const TR_SYSTEM = `Ти перекладач крипто-новин для української аудиторії.
 Перекладай простою, природною українською без жаргону.
 Власні назви (Bitcoin, Ethereum, SEC, ETF) залишай як є.
 Поверни СТРОГО JSON: {"title":"<укр>","summary":"<укр, 1-2 речення або порожньо>"}.
 Жодних коментарів навколо.`;
 
+const TR_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+
 async function translateOne(title: string, summary: string | null): Promise<{ title: string; summary: string } | null> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) return null;
   const userMsg = `TITLE: ${title}\nSUMMARY: ${(summary ?? "").slice(0, 600)}`;
-  try {
-    const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "system", content: TR_SYSTEM }, { role: "user", content: userMsg }],
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!r.ok) return null;
-    const j = await r.json();
-    const raw = j?.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(raw);
-    if (typeof parsed?.title !== "string") return null;
-    return { title: parsed.title.trim(), summary: String(parsed.summary ?? "").trim() };
-  } catch {
-    return null;
+  for (const model of TR_MODELS) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: TR_SYSTEM }] },
+            contents: [{ role: "user", parts: [{ text: userMsg }] }],
+            generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+          }),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (!r.ok) {
+        if (r.status === 429 || r.status >= 500) continue;
+        return null;
+      }
+      const j = await r.json();
+      const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "{}";
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.title !== "string") return null;
+      return { title: parsed.title.trim(), summary: String(parsed.summary ?? "").trim() };
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 // deno-lint-ignore no-explicit-any
