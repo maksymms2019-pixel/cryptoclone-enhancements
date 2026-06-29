@@ -1,39 +1,35 @@
-## Етап 1 — Повна копія репо `pixel-perfect-clone`
+# Відвʼязати проєкт від Lovable AI Gateway та Lovable Emails
 
-Репо використовує **Vite + React Router + Supabase Edge Functions**, а поточний шаблон Lovable — TanStack Start. Щоб отримати дійсно повну (1:1) копію — фронтенд, бекенд, edge-функції, міграції, PWA, налаштування — я замінюю шаблон на стек з репо.
+Ціль: сайт залежить тільки від Supabase (бекенд) та Google Gemini (AI). Жодних викликів `ai.gateway.lovable.dev`, жодних Lovable email-хуків, жодного підтвердження email.
 
-**Що копіюю напряму з GitHub:**
-- `src/` цілком (App.tsx, main.tsx, pages, components, hooks, integrations, lib, assets, styles.css)
-- `supabase/` цілком: `config.toml`, `migrations/`, `functions/` (ai-assistant, market-metrics, markets-proxy, news-aggregator, tg-auth, translate-uk)
-- `public/`, `index.html`, `vite.config.ts`, `tsconfig.json`, `components.json`, `eslint.config.js`, `bunfig.toml`, `.prettierrc`, `.prettierignore`, `package.json`, `bun.lock`
-- Видаляю TanStack-файли: `src/routes/`, `src/router.tsx`, `src/server.ts`, `src/start.ts`, `src/routeTree.gen.ts`
+## Що змінюю
 
-**Бекенд / Supabase:**
-- Підключаю Lovable Cloud і застосовую всі міграції з репо як є.
-- Розгортаю всі 6 edge-функцій з оригінальним кодом.
-- Секрети: у репо `.env` лежать лише публічні `VITE_SUPABASE_*` ключі (це нормально для anon). Серверні ключі (OpenAI/Gemini для `ai-assistant`, ключі для `translate-uk`, `news-aggregator`, тощо) у репо відсутні. Перевірю код кожної функції і **запитаю окремо ті, які реально треба** — інші перевикористаю наявні (LOVABLE_API_KEY для AI, де можливо).
+### 1. Edge Function `translate-uk`
+Зараз шле запити на `https://ai.gateway.lovable.dev/v1/chat/completions` з `LOVABLE_API_KEY` — саме звідти прийшов лист «Low Balance». Переписую `callGateway` на прямий виклик Google Gemini (`generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`) з ключем `GEMINI_API_KEY`, який ти вже дав. Кеш через `translation_cache` лишається.
 
-## Етап 2 — шість покращень (тільки після того, як етап 1 буде запущено й працює)
+### 2. Edge Function `news-aggregator` (функція `translateOne`)
+Та сама заміна: прямий Gemini замість Lovable Gateway. Логіку батчів по 6 і ліміт 250 не чіпаю.
 
-1. **Іконка «Індекс альтсезону»** — нова іконка: стек із 3 монет, верхня — ETH (ромб-логотип). Векторно, у стилі сайту.
-2. **HeatMap** — кнопка «Скачати» зараз не працює (тільки відкриває/рендерить). Полагоджу: використаю `html-to-image` (вже є у deps) → `toPng` → програмний download `.png`.
-3. **AI-аналітик** — у системному промті прибрати жорсткий фільтр «лише ринок». Дозволити будь-які крипто-теми (історія, технології, протоколи, особи на кшталт Сатоші, мережі, гаманці). Відмова — тільки коли питання поза криптосферою взагалі.
-4. **Картинка «Огляд ринку» (для Telegram/Instagram)** — переробити шаблон:
-   - вертикальний формат (story 1080×1350 або 1080×1920)
-   - головний акцент: великі цифри BTC/ETH + Fear&Greed + домінування
-   - токени/«ринок сьогодні» — другорядним блоком
-   - чиста сітка, великі шрифти, високий контраст (як на референсі-фото 2)
-5. **Графіки токенів** — повноцінний інструмент на `lightweight-charts` (вже у deps): таймфрейми 1m/5m/15m/1h/4h/1D/1W, типи (свічки/лінія/area), індикатори (MA, EMA, обʼєм), кросхейр, легенда, повноекран. Оформлення — у фірмових кольорах сайту.
-6. **Новини** — переклад працює вибірково через ліміти/кеш `translate-uk`. Зроблю однозначно: **усі** новини перекладаються синхронно при завантаженні (батч-виклик до edge-функції), з кешуванням у БД за хешем заголовка; до отримання перекладу показую скелетон, а не оригінал. Прибираю «змішаний» режим.
+### 3. Edge Function `ai-assistant`
+Вже працює напряму через Gemini — нічого не міняю.
+
+### 4. Lovable Emails / підтвердження email
+- Викликаю `email_domain--toggle_project_emails` з `enabled: false`, щоб вимкнути будь-яку email-обвʼязку Lovable.
+- Викликаю `supabase--configure_auth`, щоб увімкнути авто-підтвердження email (`mailer_autoconfirm: true`) — користувач реєструється і одразу заходить, ніяких листів.
+- Перевіряю чи в коді є `email-hook`/шаблони листів; якщо є — видаляю.
+
+### 5. Секрет `LOVABLE_API_KEY`
+Після правок він більше нікому не потрібен. Видаляю через `secrets--delete_secret`, щоб з проєкту не текли ліміти Lovable AI.
+
+### 6. Re-deploy
+Деплою `translate-uk` та `news-aggregator` з новим кодом.
 
 ## Технічні деталі
 
-- Стек після копії: Vite 7, React 19, React Router 6, Tailwind v4, Supabase JS, TanStack Query, lightweight-charts, framer-motion, vite-plugin-pwa.
-- Lovable Cloud створить новий Supabase-проєкт; `VITE_SUPABASE_*` буду брати з нового проєкту (не з репо), бо доступу до чужого Supabase у мене нема — функціонально все буде те саме.
-- Після копії: `bun install`, перевірка білда, прогін міграцій, деплой функцій, ручний smoke-тест головної сторінки.
+- Формат Gemini API: `{ contents: [{ role: "user", parts: [{ text }] }], systemInstruction: { parts: [{ text: SYSTEM }] }, generationConfig: { temperature: 0.2, responseMimeType: "application/json" } }` для перекладу новин (JSON-режим) і без `responseMimeType` для `translate-uk`.
+- Заголовок: `x-goog-api-key: ${GEMINI_API_KEY}`.
+- Fallback-моделі: `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-1.5-flash` (як уже зроблено в `ai-assistant`).
+- Таймаути та обробку помилок зберігаю.
 
-## Що мені треба від тебе перед стартом
-
-1. Підтвердження, що можна **замінити поточний TanStack-шаблон** на Vite-стек з репо (інакше «повна копія» неможлива).
-2. Я ввімкну Lovable Cloud — це створить **новий** Supabase під цей проєкт (не твій оригінальний `pfditclzcqyakdzgbqph`). ОК?
-3. Які з цих секретів у тебе є під рукою (надішлеш, коли я попрошу): ключ для AI у `ai-assistant`, ключ для перекладу в `translate-uk`, ключ/джерело для `news-aggregator`, креди для `tg-auth` (Telegram bot token). Я перевірю код функцій і запитаю тільки ті, що дійсно потрібні.
+## Що НЕ зачіпаю
+Фронтенд, БД, RLS, Telegram-auth, маркет-функції, дизайн — все лишається як є. Це чисто бекенд-чистка від Lovable-залежностей.

@@ -1,4 +1,4 @@
-// translate-uk — on-demand Ukrainian translation via Lovable AI Gateway.
+// translate-uk — on-demand Ukrainian translation via direct Google Gemini API.
 // Body: { text: string, kind?: string, key?: string }
 // Returns: { text_uk: string }
 //
@@ -24,33 +24,41 @@ const SYSTEM = `Ти перекладач для української крип
 Власні назви (Bitcoin, Ethereum, Coinbase) залишай як є.
 Жодних пояснень, тільки переклад.`;
 
-async function callGateway(text: string): Promise<string> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: text },
-      ],
-      temperature: 0.2,
-    }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!r.ok) {
-    const msg = await r.text().catch(() => "");
-    throw new Error(`gateway ${r.status}: ${msg.slice(0, 200)}`);
+async function callGemini(text: string): Promise<string> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) throw new Error("GEMINI_API_KEY missing");
+
+  let lastErr = "";
+  for (const model of GEMINI_MODELS) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM }] },
+            contents: [{ role: "user", parts: [{ text }] }],
+            generationConfig: { temperature: 0.2 },
+          }),
+          signal: AbortSignal.timeout(20_000),
+        },
+      );
+      if (!r.ok) {
+        lastErr = `gemini ${model} ${r.status}: ${(await r.text().catch(() => "")).slice(0, 200)}`;
+        if (r.status === 429 || r.status >= 500) continue;
+        throw new Error(lastErr);
+      }
+      const j = await r.json();
+      const out = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      return String(out).trim();
+    } catch (e) {
+      lastErr = String((e as Error)?.message ?? e);
+    }
   }
-  const j = await r.json();
-  const out = j?.choices?.[0]?.message?.content ?? "";
-  return String(out).trim();
+  throw new Error(lastErr || "gemini failed");
 }
 
 Deno.serve(async (req) => {
@@ -77,7 +85,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const translated = await callGateway(clean);
+    const translated = await callGemini(clean);
     await supabase.from("translation_cache").upsert({ key, kind, text_uk: translated });
 
     return new Response(JSON.stringify({ text_uk: translated, cached: false }), {
