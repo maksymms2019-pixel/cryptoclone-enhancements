@@ -333,16 +333,22 @@ export default function Dashboard() {
   );
 }
 
-// Custom altseason glyph: cluster of three small coins (alts) orbiting a central
-// gold dot (BTC). Communicates "many alts vs BTC" without leaning on a generic
-// plant/sprout icon.
+// Altcoin season glyph: a small stack of coins (alts) with an ETH diamond on
+// top — communicates "altcoins led by ETH" cleanly at icon size.
 function AltcoinsGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.4" fill="var(--gold)" />
-      <circle cx="3.2" cy="4.6" r="1.7" fill="var(--info)" opacity=".95" />
-      <circle cx="12.8" cy="5.2" r="1.7" fill="var(--accent)" opacity=".9" />
-      <circle cx="5.6" cy="12.8" r="1.7" fill="var(--cyan)" opacity=".9" />
+      {/* bottom coin */}
+      <ellipse cx="8" cy="12.4" rx="5" ry="1.7" fill="var(--gold)" opacity=".55" />
+      <ellipse cx="8" cy="11.7" rx="5" ry="1.7" fill="var(--gold)" opacity=".75" />
+      {/* middle coin */}
+      <ellipse cx="8" cy="9.4" rx="4.4" ry="1.5" fill="var(--cyan)" opacity=".7" />
+      <ellipse cx="8" cy="8.8" rx="4.4" ry="1.5" fill="var(--cyan)" opacity=".9" />
+      {/* top: ETH diamond */}
+      <g transform="translate(8 4)">
+        <path d="M0 -3.2 L2.2 0.1 L0 1.45 L-2.2 0.1 Z" fill="var(--info)" />
+        <path d="M0 2.05 L2.2 0.7 L0 3.6 L-2.2 0.7 Z" fill="var(--info)" opacity=".75" />
+      </g>
     </svg>
   );
 }

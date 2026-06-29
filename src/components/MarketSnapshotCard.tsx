@@ -100,122 +100,124 @@ export function MarketSnapshotCard() {
         </button>
       </div>
 
-      {/* Off-screen shareable card — 1080×1350 story format, densely packed */}
+      {/* Off-screen shareable card — 1920×1080 landscape: hero on left, top
+          movers on right. Two clear focal zones, generous spacing — scans in
+          one glance like a news-channel lower-third. */}
       <div style={{ position: "fixed", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
         <div
           ref={cardRef}
           style={{
-            width: 1080,
-            height: 1350,
+            width: 1920,
+            height: 1080,
             background: capUp
-              ? `radial-gradient(1100px 700px at 80% -10%, rgba(38,166,108,.22) 0%, ${BG} 55%, #03090d 100%)`
-              : `radial-gradient(1100px 700px at 80% -10%, rgba(224,69,95,.22) 0%, ${BG} 55%, #03090d 100%)`,
+              ? `radial-gradient(1400px 900px at 75% -10%, rgba(38,166,108,.22) 0%, ${BG} 55%, #03090d 100%)`
+              : `radial-gradient(1400px 900px at 75% -10%, rgba(224,69,95,.22) 0%, ${BG} 55%, #03090d 100%)`,
             color: TEXT,
             fontFamily: "Inter, system-ui, sans-serif",
             boxSizing: "border-box",
-            padding: 56,
-            display: "flex",
-            flexDirection: "column",
+            padding: 64,
+            display: "grid",
+            gridTemplateColumns: "1.05fr 1fr",
+            gridTemplateRows: "auto 1fr auto",
+            columnGap: 56,
+            rowGap: 28,
           }}
         >
-          {/* HEADER */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <img src="/icon-512.png" crossOrigin="anonymous" width={56} height={56} style={{ borderRadius: 999 }} alt="" />
+          {/* HEADER spans both columns */}
+          <div style={{ gridColumn: "1 / 3", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+              <img src="/icon-512.png" crossOrigin="anonymous" width={64} height={64} style={{ borderRadius: 999 }} alt="" />
               <div>
-                <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: 1.5, lineHeight: 1 }}>
+                <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1.5, lineHeight: 1 }}>
                   CRYPTO<span style={{ color: GOLD }}>TIME</span>
                 </div>
-                <div style={{ fontSize: 14, color: MUTED, marginTop: 4, letterSpacing: 0.5 }}>Огляд ринку</div>
+                <div style={{ fontSize: 16, color: MUTED, marginTop: 6, letterSpacing: 0.5, fontWeight: 600 }}>
+                  Огляд крипторинку
+                </div>
               </div>
             </div>
-            <div style={{ fontSize: 16, color: MUTED, fontWeight: 600 }}>{dateStr}</div>
+            <div style={{ fontSize: 20, color: MUTED, fontWeight: 700, letterSpacing: 0.3 }}>{dateStr}</div>
           </div>
 
-          {/* HERO — giant direction */}
-          <div
-            style={{
-              position: "relative",
-              borderRadius: 28,
-              padding: "36px 40px",
-              background: capUp
-                ? "linear-gradient(135deg, rgba(38,166,108,.24), rgba(38,166,108,.04))"
-                : "linear-gradient(135deg, rgba(224,69,95,.24), rgba(224,69,95,.04))",
-              border: `2px solid ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
-              display: "flex",
-              alignItems: "center",
-              gap: 28,
-            }}
-          >
+          {/* LEFT — HERO: huge 24h change + KPI grid */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
             <div
               style={{
-                width: 130,
-                height: 130,
                 borderRadius: 32,
-                background: capUp ? GREEN : RED,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: `0 20px 50px ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
-                flexShrink: 0,
+                padding: "40px 44px",
+                background: capUp
+                  ? "linear-gradient(135deg, rgba(38,166,108,.26), rgba(38,166,108,.04))"
+                  : "linear-gradient(135deg, rgba(224,69,95,.26), rgba(224,69,95,.04))",
+                border: `2px solid ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
               }}
             >
-              <svg width="72" height="72" viewBox="0 0 24 24" fill="none">
-                {capUp ? (
-                  <path d="M5 17 L12 9 L19 17" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
-                  <path d="M5 7 L12 15 L19 7" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-              </svg>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, color: MUTED, textTransform: "uppercase", letterSpacing: 1.4, fontWeight: 700 }}>
+              <div style={{ fontSize: 15, color: MUTED, textTransform: "uppercase", letterSpacing: 1.6, fontWeight: 800 }}>
                 Ринок сьогодні · 24h
               </div>
-              <div style={{ fontSize: 96, fontWeight: 900, lineHeight: 1, color: capUp ? GREEN : RED, letterSpacing: -2, marginTop: 6 }}>
-                {capChange >= 0 ? "+" : ""}{capChange.toFixed(2)}%
-              </div>
-              {metrics.data?.today_label && (
-                <div style={{ marginTop: 12, fontSize: 22, fontWeight: 700, color: TEXT, lineHeight: 1.3 }}>
-                  {metrics.data.today_label}
+              <div style={{ display: "flex", alignItems: "center", gap: 28, marginTop: 14 }}>
+                <div
+                  style={{
+                    width: 132, height: 132, borderRadius: 36, flexShrink: 0,
+                    background: capUp ? GREEN : RED,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: `0 24px 60px ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
+                  }}
+                >
+                  <svg width="76" height="76" viewBox="0 0 24 24" fill="none">
+                    {capUp ? (
+                      <path d="M5 17 L12 9 L19 17" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                    ) : (
+                      <path d="M5 7 L12 15 L19 7" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                    )}
+                  </svg>
                 </div>
-              )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 128, fontWeight: 900, lineHeight: 0.95, color: capUp ? GREEN : RED, letterSpacing: -3 }}>
+                    {capChange >= 0 ? "+" : ""}{capChange.toFixed(2)}%
+                  </div>
+                  {metrics.data?.today_label && (
+                    <div style={{ marginTop: 14, fontSize: 22, fontWeight: 700, color: TEXT, lineHeight: 1.3, maxWidth: 540 }}>
+                      {metrics.data.today_label}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 2×2 KPI GRID */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <Kpi
+                label="Капіталізація"
+                value={fmtUsd(global.data?.total_market_cap_usd, { compact: true })}
+                sub="усього ринку"
+              />
+              <Kpi
+                label="Об'єм 24h"
+                value={fmtUsd(global.data?.total_volume_usd, { compact: true })}
+                sub={`${global.data?.active_cryptocurrencies?.toLocaleString() ?? "—"} монет`}
+              />
+              <Kpi
+                label="Страх / Жадібність"
+                value={String(fgVal)}
+                sub={fgLabel(fgVal)}
+                bar={{ pct: fgVal, color: fgVal <= 44 ? RED : fgVal <= 55 ? GOLD : GREEN }}
+              />
+              <Kpi
+                label="BTC Dominance"
+                value={`${btcDom.toFixed(1)}%`}
+                sub={`Альтсезон ${altIdx}/100`}
+                bar={{ pct: btcDom, color: GOLD }}
+                secondBar={{ pct: altIdx, color: CYAN }}
+              />
             </div>
           </div>
 
-          {/* 2×2 KPI GRID */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
-            <Kpi
-              label="Капіталізація"
-              value={fmtUsd(global.data?.total_market_cap_usd, { compact: true })}
-              sub="усього ринку"
-            />
-            <Kpi
-              label="Об'єм 24h"
-              value={fmtUsd(global.data?.total_volume_usd, { compact: true })}
-              sub={`${global.data?.active_cryptocurrencies?.toLocaleString() ?? "—"} монет`}
-            />
-            <Kpi
-              label="Страх / Жадібність"
-              value={String(fgVal)}
-              sub={fgLabel(fgVal)}
-              bar={{ pct: fgVal, color: fgVal <= 44 ? RED : fgVal <= 55 ? GOLD : GREEN }}
-            />
-            <Kpi
-              label="BTC Dominance"
-              value={`${btcDom.toFixed(1)}%`}
-              sub={`Альтсезон ${altIdx}/100`}
-              bar={{ pct: btcDom, color: GOLD }}
-              secondBar={{ pct: altIdx, color: CYAN }}
-            />
-          </div>
-
-          {/* TOP-5 COINS */}
-          <div style={{ marginTop: 24, flex: 1, display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 13, color: MUTED, textTransform: "uppercase", letterSpacing: 1.4, fontWeight: 700, marginBottom: 12 }}>
+          {/* RIGHT — TOP-5 COINS */}
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div style={{ fontSize: 15, color: MUTED, textTransform: "uppercase", letterSpacing: 1.6, fontWeight: 800, marginBottom: 14 }}>
               Топ-5 монет · 24h
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
               {top.data?.map((c) => {
                 const pct = c.price_change_percentage_24h ?? 0;
                 const up = pct >= 0;
@@ -229,39 +231,38 @@ export function MarketSnapshotCard() {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 18,
+                      gap: 20,
                       background: up
                         ? `linear-gradient(90deg, rgba(38,166,108,${bgAlpha}) 0%, rgba(38,166,108,.05) 100%)`
                         : `linear-gradient(90deg, rgba(224,69,95,${bgAlpha}) 0%, rgba(224,69,95,.05) 100%)`,
                       border: `1px solid ${up ? "rgba(38,166,108,.30)" : "rgba(224,69,95,.30)"}`,
                       borderLeft: `5px solid ${accent}`,
-                      borderRadius: 16,
-                      padding: "18px 22px",
+                      borderRadius: 18,
+                      padding: "20px 24px",
                       flex: 1,
                     }}
                   >
-                    <img src={c.image} crossOrigin="anonymous" width={56} height={56} style={{ borderRadius: 999 }} alt="" />
+                    <img src={c.image} crossOrigin="anonymous" width={64} height={64} style={{ borderRadius: 999, flexShrink: 0 }} alt="" />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: 0.3, lineHeight: 1.1 }}>{c.symbol.toUpperCase()}</div>
-                      <div style={{ fontSize: 17, color: TEXT, opacity: .85, fontWeight: 600, marginTop: 4 }}>
+                      <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 0.3, lineHeight: 1.05 }}>{c.symbol.toUpperCase()}</div>
+                      <div style={{ fontSize: 18, color: TEXT, opacity: .85, fontWeight: 600, marginTop: 4 }}>
                         {fmtUsd(c.current_price, { digits: c.current_price < 1 ? 4 : 2 })}
                       </div>
                     </div>
-                    {/* Mini sparkline */}
                     {spark.length > 1 && (
-                      <svg width="120" height="40" viewBox="0 0 120 40" style={{ opacity: 0.85 }}>
-                        <path d={sparkPath(spark, 120, 40)} stroke={accent} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      <svg width="160" height="44" viewBox="0 0 160 44" style={{ opacity: 0.85, flexShrink: 0 }}>
+                        <path d={sparkPath(spark, 160, 44)} stroke={accent} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                         {up ? (
                           <path d="M5 17 L12 9 L19 17" stroke={accent} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
                         ) : (
                           <path d="M5 7 L12 15 L19 7" stroke={accent} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
                         )}
                       </svg>
-                      <div style={{ fontSize: 26, fontWeight: 900, color: accent, minWidth: 100, textAlign: "right" }}>
+                      <div style={{ fontSize: 30, fontWeight: 900, color: accent, minWidth: 120, textAlign: "right" }}>
                         {fmtPct(pct)}
                       </div>
                     </div>
@@ -271,8 +272,8 @@ export function MarketSnapshotCard() {
             </div>
           </div>
 
-          {/* FOOTER */}
-          <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5d6b75", fontWeight: 600 }}>
+          {/* FOOTER spans both columns */}
+          <div style={{ gridColumn: "1 / 3", display: "flex", justifyContent: "space-between", fontSize: 15, color: "#5d6b75", fontWeight: 600 }}>
             <span>cryptotime.app · @cryptotime_tg</span>
             <span>Не фінансова порада · DYOR</span>
           </div>

@@ -122,6 +122,10 @@ export default function Heatmap() {
   const [W, setW] = useState(360);
   const [H, setH] = useState(540);
   const [savingPng, setSavingPng] = useState(false);
+  // Snapshot of {originalUrl -> dataURL} used only during PNG export. SVG
+  // <image href="https://…"> on a foreign CDN taints the canvas; swapping
+  // hrefs to base64 data URLs before serialization makes export reliable.
+  const [imgOverride, setImgOverride] = useState<Record<string, string> | null>(null);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -169,14 +173,49 @@ export default function Heatmap() {
   );
   const legendGradient = `linear-gradient(90deg, ${legendStops.map((s) => colorFor(s, legendMax)).join(", ")})`;
 
+  async function fetchAsDataUrl(url: string): Promise<string | null> {
+    try {
+      const res = await fetch(url, { mode: "cors", cache: "force-cache" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result));
+        fr.onerror = () => reject(fr.error);
+        fr.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async function savePng() {
     const node = exportRef.current;
     if (!node) return;
     setSavingPng(true);
     try {
-      const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true, backgroundColor: "#06141C" });
+      // 1) Pre-fetch every coin icon and convert to a base64 data URL so the
+      // SVG isn't pointing at a foreign-origin asset during canvas raster.
+      const urls = Array.from(new Set(cells.map((c) => c.image).filter(Boolean)));
+      const pairs = await Promise.all(
+        urls.map(async (u) => [u, await fetchAsDataUrl(u)] as const),
+      );
+      const map: Record<string, string> = {};
+      for (const [u, d] of pairs) if (d) map[u] = d;
+      setImgOverride(map);
+      // Wait two frames so React commits the swapped <image href> attributes.
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+      const dataUrl = await toPng(node, {
+        pixelRatio: 2,
+        cacheBust: false,
+        backgroundColor: "#06141C",
+        skipFonts: false,
+        fetchRequestInit: { mode: "cors" },
+      });
+
       const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], `cryptotime-heatmap-${new Date().toISOString().slice(0,10)}.png`, { type: "image/png" });
+      const file = new File([blob], `cryptotime-heatmap-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
       const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
       if (nav.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: "CryptoTime — Heatmap" });
@@ -184,13 +223,16 @@ export default function Heatmap() {
         const a = document.createElement("a");
         a.href = dataUrl;
         a.download = file.name;
+        document.body.appendChild(a);
         a.click();
+        a.remove();
       }
       toast.success("Картинку збережено");
     } catch (e) {
       console.error(e);
       toast.error("Не вдалось згенерувати картинку");
     } finally {
+      setImgOverride(null);
       setSavingPng(false);
     }
   }
@@ -308,7 +350,8 @@ export default function Heatmap() {
                         fill={colorFor(c.pct, legendMax)} stroke="rgba(6,20,28,.9)" strokeWidth="1" rx="2"
                       />
                       {(showAll || top10SmallIcon) && c.image && (
-                        <image href={c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+                        <image href={imgOverride?.[c.image] ?? c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+                          crossOrigin="anonymous"
                           style={{ pointerEvents: "none" }} preserveAspectRatio="xMidYMid meet" />
                       )}
                       {(showAll || showSymPrice || showSym || top10SmallIcon) && (
