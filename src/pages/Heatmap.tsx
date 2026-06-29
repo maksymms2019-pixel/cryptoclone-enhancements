@@ -350,7 +350,8 @@ export default function Heatmap() {
                         fill={colorFor(c.pct, legendMax)} stroke="rgba(6,20,28,.9)" strokeWidth="1" rx="2"
                       />
                       {(showAll || top10SmallIcon) && c.image && (
-                        <image href={c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+                        <image href={imgOverride?.[c.image] ?? c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+                          crossOrigin="anonymous"
                           style={{ pointerEvents: "none" }} preserveAspectRatio="xMidYMid meet" />
                       )}
                       {(showAll || showSymPrice || showSym || top10SmallIcon) && (
