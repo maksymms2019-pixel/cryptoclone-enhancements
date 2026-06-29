@@ -309,7 +309,7 @@ export type Database = {
           last_name: string | null
           last_seen_at: string
           photo_url: string | null
-          telegram_id: number
+          telegram_id: number | null
           username: string | null
         }
         Insert: {
@@ -321,7 +321,7 @@ export type Database = {
           last_name?: string | null
           last_seen_at?: string
           photo_url?: string | null
-          telegram_id: number
+          telegram_id?: number | null
           username?: string | null
         }
         Update: {
@@ -333,7 +333,7 @@ export type Database = {
           last_name?: string | null
           last_seen_at?: string
           photo_url?: string | null
-          telegram_id?: number
+          telegram_id?: number | null
           username?: string | null
         }
         Relationships: []
