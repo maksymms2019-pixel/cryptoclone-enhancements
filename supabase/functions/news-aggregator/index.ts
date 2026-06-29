@@ -314,17 +314,26 @@ async function translateRecent(supabase: any): Promise<number> {
     .select("id,title,summary")
     .is("title_uk", null)
     .order("published_at", { ascending: false })
-    .limit(30);
+    .limit(250);
   if (error || !data?.length) return 0;
+  const rows = data as { id: string; title: string; summary: string | null }[];
   let done = 0;
-  // Run sequentially — gateway rate-limits us, and 30 is small enough.
-  for (const row of data as { id: string; title: string; summary: string | null }[]) {
-    const tr = await translateOne(row.title, row.summary);
-    if (!tr) continue;
-    await supabase.from("news_cache")
-      .update({ title_uk: tr.title, summary_uk: tr.summary || row.summary })
-      .eq("id", row.id);
-    done++;
+  // Process in parallel batches of 6 so EVERY article ends up translated,
+  // not just the freshest 30. Gateway tolerates this rate fine.
+  const BATCH = 6;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(async (row) => {
+        const tr = await translateOne(row.title, row.summary);
+        if (!tr) return false;
+        await supabase.from("news_cache")
+          .update({ title_uk: tr.title, summary_uk: tr.summary || row.summary })
+          .eq("id", row.id);
+        return true;
+      }),
+    );
+    for (const r of results) if (r.status === "fulfilled" && r.value) done++;
   }
   return done;
 }

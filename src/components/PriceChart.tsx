@@ -52,11 +52,23 @@ function tvSymbol(coinId: string, symbol: string): string {
 
 type TF = { id: string; label: string; interval: string };
 const TIMEFRAMES: TF[] = [
+  { id: "1m", label: "1m", interval: "1" },
+  { id: "5m", label: "5m", interval: "5" },
   { id: "15m", label: "15m", interval: "15" },
   { id: "1h", label: "1h", interval: "60" },
   { id: "4h", label: "4h", interval: "240" },
   { id: "1d", label: "1D", interval: "D" },
   { id: "1w", label: "1W", interval: "W" },
+  { id: "1M", label: "1M", interval: "M" },
+];
+
+type ChartStyle = { id: string; label: string; value: string };
+const STYLES: ChartStyle[] = [
+  { id: "candles", label: "Свічки", value: "1" },
+  { id: "bars", label: "Бари", value: "0" },
+  { id: "line", label: "Лінія", value: "2" },
+  { id: "area", label: "Area", value: "3" },
+  { id: "heikin", label: "Heikin", value: "8" },
 ];
 
 export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?: string }) {
