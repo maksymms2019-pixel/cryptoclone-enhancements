@@ -77,6 +77,7 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
   const [tf, setTf] = useState<TF>(TIMEFRAMES[5]); // 1D default
   const [style, setStyle] = useState<ChartStyle>(STYLES[0]);
   const [showVolume, setShowVolume] = useState(true);
+  const [showEMAs, setShowEMAs] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const sym = tvSymbol(coinId, symbol);
 
@@ -108,7 +109,7 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       style: style.value,
       locale: "uk",
       backgroundColor: "#06141C",
-      gridColor: "rgba(231, 182, 80, 0.05)",
+      gridColor: "rgba(255,255,255,0.04)",
       toolbar_bg: "#06141C",
       hide_top_toolbar: false,
       hide_side_toolbar: false,
@@ -119,10 +120,43 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       details: false,
       calendar: false,
       save_image: true,
-      studies: [],
+      studies: showEMAs
+        ? [
+            { id: "MAExp@tv-basicstudies", inputs: { length: 7 } },
+            { id: "MAExp@tv-basicstudies", inputs: { length: 14 } },
+            { id: "MAExp@tv-basicstudies", inputs: { length: 28 } },
+          ]
+        : [],
+      overrides: {
+        "paneProperties.background": "#06141C",
+        "paneProperties.backgroundType": "solid",
+        "paneProperties.vertGridProperties.color": "rgba(255,255,255,0.04)",
+        "paneProperties.horzGridProperties.color": "rgba(255,255,255,0.04)",
+        "scalesProperties.textColor": "rgba(255,255,255,0.55)",
+        "scalesProperties.lineColor": "rgba(255,255,255,0.08)",
+        "mainSeriesProperties.candleStyle.upColor": "#26A66C",
+        "mainSeriesProperties.candleStyle.downColor": "#D6405C",
+        "mainSeriesProperties.candleStyle.borderUpColor": "#26A66C",
+        "mainSeriesProperties.candleStyle.borderDownColor": "#D6405C",
+        "mainSeriesProperties.candleStyle.wickUpColor": "#26A66C",
+        "mainSeriesProperties.candleStyle.wickDownColor": "#D6405C",
+        "mainSeriesProperties.hollowCandleStyle.upColor": "#26A66C",
+        "mainSeriesProperties.hollowCandleStyle.downColor": "#D6405C",
+        "mainSeriesProperties.haStyle.upColor": "#26A66C",
+        "mainSeriesProperties.haStyle.downColor": "#D6405C",
+        "mainSeriesProperties.barStyle.upColor": "#26A66C",
+        "mainSeriesProperties.barStyle.downColor": "#D6405C",
+        "mainSeriesProperties.lineStyle.color": "#E7B650",
+        "mainSeriesProperties.areaStyle.color1": "rgba(231,182,80,0.35)",
+        "mainSeriesProperties.areaStyle.color2": "rgba(231,182,80,0.02)",
+        "mainSeriesProperties.areaStyle.linecolor": "#E7B650",
+      },
       studies_overrides: {
         "volume.volume.color.0": "rgba(214,64,92,.55)",
         "volume.volume.color.1": "rgba(38,166,108,.55)",
+        "volume.volume.transparency": 65,
+        "moving average exponential.plot.color": "#E7B650",
+        "moving average exponential.plot.linewidth": 2,
       },
       support_host: "https://www.tradingview.com",
     });
@@ -132,7 +166,7 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
       cancelled = true;
       try { if (container) container.innerHTML = ""; } catch { /* ignore TV teardown */ }
     };
-  }, [sym, tf, style, showVolume]);
+  }, [sym, tf, style, showVolume, showEMAs]);
 
   return (
     <div
@@ -179,6 +213,14 @@ export function PriceChart({ coinId, symbol = "btc" }: { coinId: string; symbol?
             title="Обʼєм"
           >
             Обʼєм
+          </button>
+          <button
+            onClick={() => setShowEMAs((v) => !v)}
+            className="chip text-[10px] px-2 py-1"
+            data-active={showEMAs}
+            title="EMA 7 / 14 / 28"
+          >
+            EMA
           </button>
           <button
             onClick={() => setFullscreen((f) => !f)}
