@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const translated = await callGateway(clean);
+    const translated = await callGemini(clean);
     await supabase.from("translation_cache").upsert({ key, kind, text_uk: translated });
 
     return new Response(JSON.stringify({ text_uk: translated, cached: false }), {
