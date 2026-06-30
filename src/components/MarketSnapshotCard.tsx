@@ -212,7 +212,7 @@ export function MarketSnapshotCard() {
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 26, fontWeight: 800, color: TEXT, tabularNums: true } as React.CSSProperties}>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
                         {fmtUsd(c.current_price, { digits: c.current_price < 1 ? 4 : 2 })}
                       </div>
                       <div
