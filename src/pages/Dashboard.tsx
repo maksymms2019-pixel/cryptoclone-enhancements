@@ -333,22 +333,16 @@ export default function Dashboard() {
   );
 }
 
-// Altcoin season glyph: a small stack of coins (alts) with an ETH diamond on
-// top — communicates "altcoins led by ETH" cleanly at icon size.
+// Altcoin season glyph: three bars (alts) with the middle one taller and
+// brighter — reads as "altcoins outperforming" at icon size, with a small
+// up-arrow on top of the leading bar.
 function AltcoinsGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      {/* bottom coin */}
-      <ellipse cx="8" cy="12.4" rx="5" ry="1.7" fill="var(--gold)" opacity=".55" />
-      <ellipse cx="8" cy="11.7" rx="5" ry="1.7" fill="var(--gold)" opacity=".75" />
-      {/* middle coin */}
-      <ellipse cx="8" cy="9.4" rx="4.4" ry="1.5" fill="var(--cyan)" opacity=".7" />
-      <ellipse cx="8" cy="8.8" rx="4.4" ry="1.5" fill="var(--cyan)" opacity=".9" />
-      {/* top: ETH diamond */}
-      <g transform="translate(8 4)">
-        <path d="M0 -3.2 L2.2 0.1 L0 1.45 L-2.2 0.1 Z" fill="var(--info)" />
-        <path d="M0 2.05 L2.2 0.7 L0 3.6 L-2.2 0.7 Z" fill="var(--info)" opacity=".75" />
-      </g>
+      <rect x="2" y="9.5" width="3" height="4.5" rx="0.6" fill="var(--gold)" opacity="0.55" />
+      <rect x="6.5" y="5" width="3" height="9" rx="0.6" fill="var(--gold)" />
+      <rect x="11" y="7.5" width="3" height="6.5" rx="0.6" fill="var(--gold)" opacity="0.7" />
+      <path d="M8 2 L10 4 L9 4 L9 4.5 L7 4.5 L7 4 L6 4 Z" fill="var(--accent)" />
     </svg>
   );
 }

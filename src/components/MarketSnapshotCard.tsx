@@ -4,40 +4,32 @@ import { toPng } from "html-to-image";
 import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchGlobal, fetchFearGreed, fetchMarkets } from "@/lib/markets";
-import { fetchMarketMetrics } from "@/lib/metrics";
 import { fmtUsd, fmtPct } from "@/lib/format";
+import { fetchMarketMetrics } from "@/lib/metrics";
 
-function fgLabel(v: number): string {
-  if (v <= 24) return "Сильний страх";
-  if (v <= 44) return "Страх";
-  if (v <= 55) return "Нейтрально";
-  if (v <= 74) return "Жадібність";
-  return "Сильна жадібність";
-}
-
-// Tiny inline sparkline as SVG path
-function sparkPath(values: number[], width: number, height: number): string {
-  if (!values?.length) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const step = width / (values.length - 1 || 1);
-  return values
-    .map((v, i) => {
-      const x = i * step;
-      const y = height - ((v - min) / range) * height;
-      return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
-const GREEN = "#26A66C";
-const RED = "#E0455F";
+const GREEN = "#22C55E";
+const RED = "#EF4444";
 const GOLD = "#E7B650";
-const CYAN = "#5AC8E0";
 const TEXT = "#F8FAFC";
 const MUTED = "#8A9BA8";
-const BG = "#06141C";
+const BG = "#0E1116";
+const CARD = "#1A1D24";
+const CARD_BORDER = "rgba(255,255,255,.06)";
+
+function fgLabel(v: number): string {
+  if (v <= 24) return "EXTREME FEAR";
+  if (v <= 44) return "FEAR";
+  if (v <= 55) return "NEUTRAL";
+  if (v <= 74) return "GREED";
+  return "EXTREME GREED";
+}
+function fgColor(v: number): string {
+  if (v <= 24) return RED;
+  if (v <= 44) return "#F97316";
+  if (v <= 55) return GOLD;
+  if (v <= 74) return "#84CC16";
+  return GREEN;
+}
 
 export function MarketSnapshotCard() {
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -46,10 +38,10 @@ export function MarketSnapshotCard() {
   const global = useQuery({ queryKey: ["global"], queryFn: fetchGlobal });
   const fg = useQuery({ queryKey: ["fg"], queryFn: fetchFearGreed });
   const metrics = useQuery({ queryKey: ["market-metrics"], queryFn: fetchMarketMetrics, staleTime: 300_000 });
-  const top = useQuery({ queryKey: ["markets", "snapshot", 5], queryFn: () => fetchMarkets({ perPage: 5, sparkline: true }) });
+  const top = useQuery({ queryKey: ["markets", "snapshot", 8], queryFn: () => fetchMarkets({ perPage: 12, sparkline: false }) });
 
   const ready = global.data && fg.data && metrics.data && top.data;
-  const dateStr = new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" });
+  const dateStr = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long" });
 
   async function save() {
     if (!cardRef.current || !ready) return;
@@ -77,10 +69,12 @@ export function MarketSnapshotCard() {
   }
 
   const capChange = global.data?.market_cap_change_percentage_24h_usd ?? 0;
-  const capUp = capChange >= 0;
   const fgVal = fg.data?.value ?? 50;
   const altIdx = metrics.data?.altseason_index ?? 0;
   const btcDom = global.data?.btc_dominance ?? 0;
+  const ethDom = global.data?.eth_dominance ?? 0;
+  // Pseudo 24h changes for dominance (we don't have history, leave neutral pill)
+  const coins = (top.data ?? []).filter((c) => c.id !== "figure-heloc").slice(0, 7);
 
   return (
     <section className="surface p-4">
@@ -100,170 +94,136 @@ export function MarketSnapshotCard() {
         </button>
       </div>
 
-      {/* Off-screen shareable card — 1920×1080 landscape: hero on left, top
-          movers on right. Two clear focal zones, generous spacing — scans in
-          one glance like a news-channel lower-third. */}
+      {/* Off-screen 1920x1080 share card — clean, scannable, Incrypted-style */}
       <div style={{ position: "fixed", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
         <div
           ref={cardRef}
           style={{
             width: 1920,
             height: 1080,
-            background: capUp
-              ? `radial-gradient(1400px 900px at 75% -10%, rgba(38,166,108,.22) 0%, ${BG} 55%, #03090d 100%)`
-              : `radial-gradient(1400px 900px at 75% -10%, rgba(224,69,95,.22) 0%, ${BG} 55%, #03090d 100%)`,
+            background: BG,
             color: TEXT,
             fontFamily: "Inter, system-ui, sans-serif",
             boxSizing: "border-box",
-            padding: 64,
-            display: "grid",
-            gridTemplateColumns: "1.05fr 1fr",
-            gridTemplateRows: "auto 1fr auto",
-            columnGap: 56,
-            rowGap: 28,
+            padding: 48,
+            display: "flex",
+            flexDirection: "column",
+            gap: 32,
           }}
         >
-          {/* HEADER spans both columns */}
-          <div style={{ gridColumn: "1 / 3", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          {/* HEADER */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-              <img src="/icon-512.png" crossOrigin="anonymous" width={64} height={64} style={{ borderRadius: 999 }} alt="" />
-              <div>
-                <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1.5, lineHeight: 1 }}>
-                  CRYPTO<span style={{ color: GOLD }}>TIME</span>
-                </div>
-                <div style={{ fontSize: 16, color: MUTED, marginTop: 6, letterSpacing: 0.5, fontWeight: 600 }}>
-                  Огляд крипторинку
-                </div>
+              <div
+                style={{
+                  width: 72, height: 72, borderRadius: 999, background: "#E0455F",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  boxShadow: "0 8px 24px rgba(224,69,95,.35)",
+                }}
+              >
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+                  <path d="M21 7a4 4 0 0 1-7 2.7L9 14.7l-2-2 5-5A4 4 0 0 1 17 3a4 4 0 0 1 4 4Z" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="m6.5 13.5 4 4M3 21l5-5" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: 1, lineHeight: 1 }}>
+                CRYPTO<span style={{ color: GOLD }}>TIME</span>
               </div>
             </div>
-            <div style={{ fontSize: 20, color: MUTED, fontWeight: 700, letterSpacing: 0.3 }}>{dateStr}</div>
-          </div>
-
-          {/* LEFT — HERO: huge 24h change + KPI grid */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
             <div
               style={{
-                borderRadius: 32,
-                padding: "40px 44px",
-                background: capUp
-                  ? "linear-gradient(135deg, rgba(38,166,108,.26), rgba(38,166,108,.04))"
-                  : "linear-gradient(135deg, rgba(224,69,95,.26), rgba(224,69,95,.04))",
-                border: `2px solid ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
+                background: GOLD, color: "#1A0F00", borderRadius: 999,
+                padding: "20px 64px", fontSize: 34, fontWeight: 900, letterSpacing: 0.4,
               }}
             >
-              <div style={{ fontSize: 15, color: MUTED, textTransform: "uppercase", letterSpacing: 1.6, fontWeight: 800 }}>
-                Ринок сьогодні · 24h
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 28, marginTop: 14 }}>
-                <div
-                  style={{
-                    width: 132, height: 132, borderRadius: 36, flexShrink: 0,
-                    background: capUp ? GREEN : RED,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    boxShadow: `0 24px 60px ${capUp ? "rgba(38,166,108,.45)" : "rgba(224,69,95,.45)"}`,
-                  }}
-                >
-                  <svg width="76" height="76" viewBox="0 0 24 24" fill="none">
-                    {capUp ? (
-                      <path d="M5 17 L12 9 L19 17" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                    ) : (
-                      <path d="M5 7 L12 15 L19 7" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                    )}
-                  </svg>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 128, fontWeight: 900, lineHeight: 0.95, color: capUp ? GREEN : RED, letterSpacing: -3 }}>
-                    {capChange >= 0 ? "+" : ""}{capChange.toFixed(2)}%
-                  </div>
-                  {metrics.data?.today_label && (
-                    <div style={{ marginTop: 14, fontSize: 22, fontWeight: 700, color: TEXT, lineHeight: 1.3, maxWidth: 540 }}>
-                      {metrics.data.today_label}
-                    </div>
-                  )}
-                </div>
-              </div>
+              Market overview
             </div>
-
-            {/* 2×2 KPI GRID */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Kpi
-                label="Капіталізація"
-                value={fmtUsd(global.data?.total_market_cap_usd, { compact: true })}
-                sub="усього ринку"
-              />
-              <Kpi
-                label="Об'єм 24h"
-                value={fmtUsd(global.data?.total_volume_usd, { compact: true })}
-                sub={`${global.data?.active_cryptocurrencies?.toLocaleString() ?? "—"} монет`}
-              />
-              <Kpi
-                label="Страх / Жадібність"
-                value={String(fgVal)}
-                sub={fgLabel(fgVal)}
-                bar={{ pct: fgVal, color: fgVal <= 44 ? RED : fgVal <= 55 ? GOLD : GREEN }}
-              />
-              <Kpi
-                label="BTC Dominance"
-                value={`${btcDom.toFixed(1)}%`}
-                sub={`Альтсезон ${altIdx}/100`}
-                bar={{ pct: btcDom, color: GOLD }}
-                secondBar={{ pct: altIdx, color: CYAN }}
-              />
+            <div
+              style={{
+                background: CARD, borderRadius: 999, padding: "20px 40px",
+                fontSize: 28, fontWeight: 700, color: TEXT, border: `1px solid ${CARD_BORDER}`,
+              }}
+            >
+              {dateStr}
             </div>
           </div>
 
-          {/* RIGHT — TOP-5 COINS */}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <div style={{ fontSize: 15, color: MUTED, textTransform: "uppercase", letterSpacing: 1.6, fontWeight: 800, marginBottom: 14 }}>
-              Топ-5 монет · 24h
+          {/* 3 COLUMNS */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.05fr 0.95fr 1.25fr", gap: 24, flex: 1, minHeight: 0 }}>
+            {/* LEFT — 4 KPI cards stacked */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <Kpi label="Crypto market cap" value={fmtUsd(global.data?.total_market_cap_usd, { compact: true })} pct={capChange} />
+              <Kpi label="Market volume 24H" value={fmtUsd(global.data?.total_volume_usd, { compact: true })} />
+              <Kpi label="BTC Dominance" value={`${btcDom.toFixed(2)}%`} />
+              <Kpi label="ETH Dominance" value={`${ethDom.toFixed(2)}%`} />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
-              {top.data?.map((c) => {
+
+            {/* CENTER — Fear & Greed + Altseason */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              <div
+                style={{
+                  background: CARD, borderRadius: 28, border: `1px solid ${CARD_BORDER}`,
+                  padding: 28, display: "flex", flexDirection: "column", alignItems: "center", flex: 1.4,
+                }}
+              >
+                <div style={{ fontSize: 24, fontWeight: 700, color: TEXT, marginBottom: 14 }}>Fear & Greed Index</div>
+                <FgDonut value={fgVal} />
+                <div
+                  style={{
+                    marginTop: 18, background: "rgba(255,255,255,.06)", borderRadius: 999,
+                    padding: "10px 24px", fontSize: 18, fontWeight: 800, color: fgColor(fgVal), letterSpacing: 1,
+                  }}
+                >
+                  {fgLabel(fgVal)}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: CARD, borderRadius: 28, border: `1px solid ${CARD_BORDER}`,
+                  padding: 24, display: "flex", flexDirection: "column", alignItems: "center", flex: 1,
+                }}
+              >
+                <div style={{ fontSize: 22, fontWeight: 700, color: TEXT, marginBottom: 10 }}>Altcoin Season Index</div>
+                <AltseasonGauge value={altIdx} />
+              </div>
+            </div>
+
+            {/* RIGHT — coins list */}
+            <div
+              style={{
+                background: CARD, borderRadius: 28, border: `1px solid ${CARD_BORDER}`,
+                padding: "22px 26px", display: "flex", flexDirection: "column", justifyContent: "space-between",
+              }}
+            >
+              {coins.map((c) => {
                 const pct = c.price_change_percentage_24h ?? 0;
                 const up = pct >= 0;
-                const intensity = Math.min(1, Math.abs(pct) / 8);
-                const bgAlpha = 0.12 + intensity * 0.22;
-                const accent = up ? GREEN : RED;
-                const spark = c.sparkline_in_7d?.price ?? [];
                 return (
-                  <div
-                    key={c.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 20,
-                      background: up
-                        ? `linear-gradient(90deg, rgba(38,166,108,${bgAlpha}) 0%, rgba(38,166,108,.05) 100%)`
-                        : `linear-gradient(90deg, rgba(224,69,95,${bgAlpha}) 0%, rgba(224,69,95,.05) 100%)`,
-                      border: `1px solid ${up ? "rgba(38,166,108,.30)" : "rgba(224,69,95,.30)"}`,
-                      borderLeft: `5px solid ${accent}`,
-                      borderRadius: 18,
-                      padding: "20px 24px",
-                      flex: 1,
-                    }}
-                  >
-                    <img src={c.image} crossOrigin="anonymous" width={64} height={64} style={{ borderRadius: 999, flexShrink: 0 }} alt="" />
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                    <img
+                      src={c.image} crossOrigin="anonymous" width={56} height={56}
+                      style={{ borderRadius: 999, flexShrink: 0 }} alt=""
+                    />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 0.3, lineHeight: 1.05 }}>{c.symbol.toUpperCase()}</div>
-                      <div style={{ fontSize: 18, color: TEXT, opacity: .85, fontWeight: 600, marginTop: 4 }}>
-                        {fmtUsd(c.current_price, { digits: c.current_price < 1 ? 4 : 2 })}
+                      <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.1, color: TEXT }}>{c.name}</div>
+                      <div style={{ fontSize: 16, color: MUTED, fontWeight: 600, marginTop: 4, letterSpacing: 0.5 }}>
+                        {c.symbol.toUpperCase()}
                       </div>
                     </div>
-                    {spark.length > 1 && (
-                      <svg width="160" height="44" viewBox="0 0 160 44" style={{ opacity: 0.85, flexShrink: 0 }}>
-                        <path d={sparkPath(spark, 160, 44)} stroke={accent} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                        {up ? (
-                          <path d="M5 17 L12 9 L19 17" stroke={accent} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                        ) : (
-                          <path d="M5 7 L12 15 L19 7" stroke={accent} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                        )}
-                      </svg>
-                      <div style={{ fontSize: 30, fontWeight: 900, color: accent, minWidth: 120, textAlign: "right" }}>
-                        {fmtPct(pct)}
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
+                        {fmtUsd(c.current_price, { digits: c.current_price < 1 ? 4 : 2 })}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4,
+                          background: up ? "rgba(34,197,94,.16)" : "rgba(239,68,68,.16)",
+                          color: up ? GREEN : RED,
+                          borderRadius: 999, padding: "4px 12px", fontSize: 15, fontWeight: 800,
+                        }}
+                      >
+                        {up ? "↑" : "↓"} {Math.abs(pct).toFixed(2)}%
                       </div>
                     </div>
                   </div>
@@ -271,49 +231,86 @@ export function MarketSnapshotCard() {
               })}
             </div>
           </div>
-
-          {/* FOOTER spans both columns */}
-          <div style={{ gridColumn: "1 / 3", display: "flex", justifyContent: "space-between", fontSize: 15, color: "#5d6b75", fontWeight: 600 }}>
-            <span>cryptotime.app · @cryptotime_tg</span>
-            <span>Не фінансова порада · DYOR</span>
-          </div>
         </div>
       </div>
     </section>
   );
 }
 
-function Kpi({
-  label, value, sub, bar, secondBar,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  bar?: { pct: number; color: string };
-  secondBar?: { pct: number; color: string };
-}) {
+function Kpi({ label, value, pct }: { label: string; value: string; pct?: number }) {
+  const showPct = typeof pct === "number" && isFinite(pct);
+  const up = (pct ?? 0) >= 0;
   return (
     <div
       style={{
-        background: "rgba(255,255,255,.04)",
-        borderRadius: 18,
-        padding: "20px 22px",
-        border: "1px solid rgba(255,255,255,.06)",
+        background: CARD, borderRadius: 28, border: `1px solid ${CARD_BORDER}`,
+        padding: "26px 30px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "center",
       }}
     >
-      <div style={{ fontSize: 12, color: MUTED, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 36, fontWeight: 900, marginTop: 6, color: TEXT, lineHeight: 1, letterSpacing: -0.5 }}>{value}</div>
-      {sub && <div style={{ fontSize: 13, color: MUTED, marginTop: 6, fontWeight: 600 }}>{sub}</div>}
-      {bar && (
-        <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-          <div style={{ width: `${Math.min(100, bar.pct)}%`, height: "100%", background: bar.color }} />
-        </div>
-      )}
-      {secondBar && (
-        <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: "rgba(255,255,255,.06)", overflow: "hidden" }}>
-          <div style={{ width: `${Math.min(100, secondBar.pct)}%`, height: "100%", background: secondBar.color }} />
-        </div>
-      )}
+      <div style={{ fontSize: 18, color: TEXT, opacity: 0.9, fontWeight: 600 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
+        <div style={{ fontSize: 46, fontWeight: 800, color: TEXT, lineHeight: 1, letterSpacing: -1 }}>{value}</div>
+        {showPct && (
+          <div
+            style={{
+              background: up ? "rgba(34,197,94,.16)" : "rgba(239,68,68,.16)",
+              color: up ? GREEN : RED,
+              borderRadius: 999, padding: "6px 14px", fontSize: 18, fontWeight: 800, whiteSpace: "nowrap",
+            }}
+          >
+            {up ? "↑" : "↓"} {Math.abs(pct!).toFixed(2)}%
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function FgDonut({ value }: { value: number }) {
+  const size = 220;
+  const stroke = 22;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, value)) / 100;
+  const color = fgColor(value);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,.08)" strokeWidth={stroke} fill="none" />
+      <circle
+        cx={size / 2} cy={size / 2} r={r}
+        stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+        strokeDasharray={`${c * pct} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fontSize={64} fontWeight={800} fill={color}>
+        {value}
+      </text>
+    </svg>
+  );
+}
+
+function AltseasonGauge({ value }: { value: number }) {
+  const size = 220;
+  const stroke = 22;
+  const r = (size - stroke) / 2;
+  const cx = size / 2, cy = size / 2 + 10;
+  const pct = Math.max(0, Math.min(100, value)) / 100;
+  // half circle: arc length = π * r
+  const arc = Math.PI * r;
+  return (
+    <svg width={size} height={size / 1.7} viewBox={`0 0 ${size} ${size / 1.7}`} style={{ overflow: "visible" }}>
+      <path
+        d={`M ${stroke / 2} ${cy} A ${r} ${r} 0 0 1 ${size - stroke / 2} ${cy}`}
+        stroke="rgba(255,255,255,.08)" strokeWidth={stroke} fill="none" strokeLinecap="round"
+      />
+      <path
+        d={`M ${stroke / 2} ${cy} A ${r} ${r} 0 0 1 ${size - stroke / 2} ${cy}`}
+        stroke={GOLD} strokeWidth={stroke} fill="none" strokeLinecap="round"
+        strokeDasharray={`${arc * pct} ${arc}`}
+      />
+      <text x="50%" y={cy - 8} textAnchor="middle" dominantBaseline="central" fontSize={52} fontWeight={800} fill={TEXT}>
+        {value}
+      </text>
+    </svg>
   );
 }

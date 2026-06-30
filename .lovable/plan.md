@@ -1,35 +1,55 @@
-# Відвʼязати проєкт від Lovable AI Gateway та Lovable Emails
 
-Ціль: сайт залежить тільки від Supabase (бекенд) та Google Gemini (AI). Жодних викликів `ai.gateway.lovable.dev`, жодних Lovable email-хуків, жодного підтвердження email.
+## План доопрацювань
 
-## Що змінюю
+### 1. Графік токена (`src/components/PriceChart.tsx`, `src/pages/CoinDetail.tsx`)
+Прибрати хаос: зараз ряд чипів (TF + стиль + об'єм + EMA + fullscreen) переповнений. Зробити чисту біржову шапку:
+- Верхній рядок: символ + поточна ціна + % зміна (зліва), кнопки fullscreen / save (справа).
+- Другий рядок: лише таймфрейми (1m 5m 15m 1h 4h 1D 1W 1M) — сегментований контрол, без чипів.
+- Меню "⋯ Налаштування" (поповер) ховає: тип графіка (свічки/лінія/area/heikin), Volume on/off, EMA on/off. Так базовий вигляд стає простим, а просунуті опції — на одну кнопку далі.
+- Замість двох розділювачів і 15+ дрібних чипів — рівні tab-кнопки з підкресленням активного.
 
-### 1. Edge Function `translate-uk`
-Зараз шле запити на `https://ai.gateway.lovable.dev/v1/chat/completions` з `LOVABLE_API_KEY` — саме звідти прийшов лист «Low Balance». Переписую `callGateway` на прямий виклик Google Gemini (`generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`) з ключем `GEMINI_API_KEY`, який ти вже дав. Кеш через `translation_cache` лишається.
+### 2. Картинка "Огляд ринку" (`src/components/MarketSnapshotCard.tsx`)
+Переробити під стиль референсу IMG_8100 (Incrypted). Горизонталь 1920×1080:
+- Шапка: лого CryptoTime зліва, центральна «таблетка» з заголовком "Огляд ринку", дата справа.
+- 3 колонки під шапкою:
+  - Ліва (вузька): 4 KPI-картки одна під одною — Market Cap, Volume 24H, BTC Dominance, ETH Dominance. Великі цифри, маленький підпис, кольоровий пілл з %.
+  - Центр: Fear & Greed donut + текстовий стан, нижче Altcoin Season півколо-гейдж з числом.
+  - Права: топ-8 монет з іконкою, назвою, тікером, ціною і кольоровим пілл-% зміни.
+- Прибрати градієнтні засвічення, темне рівне тло `#0E1116`, картки `#1A1D24`, акценти жовтий `#E7B650`, зелений `#22C55E`, червоний `#EF4444`. Жодних "героїчних" 24h-цифр на пів-екрана — все рівнозначне і скануване.
 
-### 2. Edge Function `news-aggregator` (функція `translateOne`)
-Та сама заміна: прямий Gemini замість Lovable Gateway. Логіку батчів по 6 і ліміт 250 не чіпаю.
+### 3. Новини (`src/pages/News.tsx`, `src/lib/news.ts`, `supabase/functions/news-aggregator/index.ts`)
+Лаги і "переклад через раз":
+- Прибрати ручне «Оновити» як основну дію — додати auto-refresh кожні 60s через `refetchInterval` React Query + тихе фонове підтягування при focus. Кнопка лишається як ручний trigger.
+- Зробити переклад **проактивним і повним**: при insert у `news-aggregator` одразу перекладати всі нові items (батчі по 8 паралельно, з retry і fallback моделей). Видалити "translateRecent з лімітом" — перекладається все, що ще не має `title_uk`.
+- На фронті: показувати `title_uk` тільки коли є, інакше fallback на оригінал + помітка «переклад…» + on-demand виклик `translate-uk` для конкретного item з кешем у localStorage (вже існує). Так користувач ніколи не бачить англомовну новину без спроби перекладу.
+- Виправити "лаги": замінити повний `clusterAndRank` на мемоізацію по id-сету, прибрати важкий ререндер при кожному tick (винести `timeAgo` в окремий легкий компонент із інтервалом).
 
-### 3. Edge Function `ai-assistant`
-Вже працює напряму через Gemini — нічого не міняю.
+### 4. Експорт HeatMap (`src/pages/Heatmap.tsx`)
+Скачана PNG має виглядати як IMG_8101:
+- Прибрати зовнішні padding/margin при експорті — рендерити окремий off-screen контейнер 1080×1350 (story) без полів, лише сам treemap + шапка-крихітка.
+- Перенести легенду кольорів (-13% … +13%) **на низ** експорту як суцільну градієнтну стрічку з підписами під нею.
+- Залишити невелику шапку зверху (логотип + дата), без зайвих карток. Без рамок навколо плиток.
 
-### 4. Lovable Emails / підтвердження email
-- Викликаю `email_domain--toggle_project_emails` з `enabled: false`, щоб вимкнути будь-яку email-обвʼязку Lovable.
-- Викликаю `supabase--configure_auth`, щоб увімкнути авто-підтвердження email (`mailer_autoconfirm: true`) — користувач реєструється і одразу заходить, ніяких листів.
-- Перевіряю чи в коді є `email-hook`/шаблони листів; якщо є — видаляю.
+### 5. CryptoBubbles + чистка списку токенів
+- `src/components/CryptoBubbles.tsx`: додати кнопку експорту PNG (через `html-to-image.toPng`) аналогічно Heatmap, з прелоадом іконок у dataURL щоб уникнути tainted canvas. Зараз кнопки скачування або немає, або вона мовчки падає.
+- `src/lib/markets.ts` (фільтр у `markets-proxy` / клієнтський фільтр топ-списків): додати чорний список id, який включає `figure-heloc` (та `FIGURE` ticker). Фільтрувати у всіх місцях, де рендериться топ: Dashboard, Markets, MarketSnapshotCard, CryptoBubbles, PriceTicker.
 
-### 5. Секрет `LOVABLE_API_KEY`
-Після правок він більше нікому не потрібен. Видаляю через `secrets--delete_secret`, щоб з проєкту не текли ліміти Lovable AI.
+### 6. Altseason icon + блок "Стан ринку сьогодні" (`src/pages/Dashboard.tsx`)
+- Іконка альтсезону: замість поточної намалювати простий, але впізнаваний SVG — стовпчикова діаграма з 3 баріками, де центральний (ETH) найвищий і підсвічений жовтим, + маленька стрілка вгору. Чітко читається в 24×24.
+- «Стан ринку сьогодні» спростити: один рядок = одна метрика. Прибрати декоративні градієнтні підкладки і вкладені картки. Структура:
+  ```
+  Стан ринку · сьогодні
+  ───────────────────────────
+  Market Cap     $X.XT   ▲ 0.4%
+  Volume 24H     $Y.YB   ▼ 1.2%
+  BTC Dominance  58.1%   ▲ 0.1%
+  Fear & Greed   24 · Страх
+  Altseason       49 · Нейтрально
+  ```
+  Великий заголовок, рівні рядки з тонким divider, кольорові пілл лише для %. Жодних повторюваних великих карток поруч.
 
-### 6. Re-deploy
-Деплою `translate-uk` та `news-aggregator` з новим кодом.
-
-## Технічні деталі
-
-- Формат Gemini API: `{ contents: [{ role: "user", parts: [{ text }] }], systemInstruction: { parts: [{ text: SYSTEM }] }, generationConfig: { temperature: 0.2, responseMimeType: "application/json" } }` для перекладу новин (JSON-режим) і без `responseMimeType` для `translate-uk`.
-- Заголовок: `x-goog-api-key: ${GEMINI_API_KEY}`.
-- Fallback-моделі: `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-1.5-flash` (як уже зроблено в `ai-assistant`).
-- Таймаути та обробку помилок зберігаю.
-
-## Що НЕ зачіпаю
-Фронтенд, БД, RLS, Telegram-auth, маркет-функції, дизайн — все лишається як є. Це чисто бекенд-чистка від Lovable-залежностей.
+### Технічні нотатки
+- Жодних нових залежностей крім вже встановленого `html-to-image`.
+- AI/переклад далі через прямий Gemini у `translate-uk` і `news-aggregator` (без Lovable Gateway).
+- Edge-функції `news-aggregator` і (за потреби) `markets-proxy` будуть перевиплачені.
+- Перевірка: збірка + ручний прохід по Dashboard / CoinDetail / News / Heatmap / Bubbles після змін.
