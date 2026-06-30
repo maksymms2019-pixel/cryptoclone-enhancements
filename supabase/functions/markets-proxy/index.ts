@@ -38,12 +38,19 @@ function cacheKey(body: Op): string {
   return JSON.stringify(body);
 }
 
+// Tokens excluded from every list — community considers them either
+// non-tradable (wrapped/locked claims, on-chain accounting entries) or
+// having unreliable reported market caps.
+const ID_BLACKLIST = new Set<string>(["figure-heloc"]);
+
 async function callCoinGecko(body: Op): Promise<unknown> {
   if (body.op === "markets") {
     const u = new URL(`${CG}/coins/markets`);
     u.searchParams.set("vs_currency", "usd");
     u.searchParams.set("order", "market_cap_desc");
-    u.searchParams.set("per_page", String(body.perPage ?? 100));
+    // Over-fetch slightly so we can drop blacklisted coins and still hit perPage.
+    const requested = body.perPage ?? 100;
+    u.searchParams.set("per_page", String(Math.min(250, requested + 5)));
     u.searchParams.set("page", String(body.page ?? 1));
     u.searchParams.set("sparkline", String(body.sparkline ?? true));
     u.searchParams.set("price_change_percentage", "1h,24h,7d,30d");
@@ -51,7 +58,8 @@ async function callCoinGecko(body: Op): Promise<unknown> {
     if (body.category) u.searchParams.set("category", body.category);
     const r = await fetch(u, { signal: AbortSignal.timeout(9000) });
     if (!r.ok) throw new Error(`coingecko markets ${r.status}`);
-    return r.json();
+    const arr = (await r.json()) as Array<{ id: string }>;
+    return arr.filter((c) => !ID_BLACKLIST.has(c.id)).slice(0, requested);
   }
   if (body.op === "global") {
     const r = await fetch(`${CG}/global`, { signal: AbortSignal.timeout(8000) });
@@ -159,7 +167,7 @@ async function callCoinGecko(body: Op): Promise<unknown> {
     const r = await fetch(u, { signal: AbortSignal.timeout(9000) });
     if (!r.ok) throw new Error(`coingecko gl ${r.status}`);
     const arr = await r.json() as Array<{ id: string; symbol: string; name: string; image: string; current_price: number; price_change_percentage_24h: number }>;
-    const valid = arr.filter((c) => isFinite(c.price_change_percentage_24h));
+    const valid = arr.filter((c) => isFinite(c.price_change_percentage_24h) && !ID_BLACKLIST.has(c.id));
     const sorted = [...valid].sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
     const gainers = sorted.slice(0, 5);
     const losers = sorted.slice(-5).reverse();
