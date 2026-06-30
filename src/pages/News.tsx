@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchNews, refreshNews, bumpClick, clusterAndRank, type NewsItem, type NewsCluster } from "@/lib/news";
+import { translateToUk } from "@/lib/translate";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { SeoHead } from "@/components/SeoHead";
-import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp, Languages } from "lucide-react";
 import { timeAgo } from "@/lib/format";
 import { toast } from "sonner";
 import { openExternal } from "@/lib/telegram";
@@ -23,7 +24,6 @@ function isValidHttpUrl(url: string): boolean {
 
 function badgeFor(item: NewsItem): { label: string; tone: string } | null {
   const ageH = (Date.now() - new Date(item.published_at).getTime()) / 3_600_000;
-  // "Щойно" — only for genuinely fresh, high-importance pieces.
   if (ageH < 1 && (item.importance_score ?? 0) >= 10) {
     return { label: "Щойно", tone: "text-[var(--gold)]" };
   }
@@ -33,17 +33,23 @@ function badgeFor(item: NewsItem): { label: string; tone: string } | null {
   return null;
 }
 
-function displayTitle(n: NewsItem): string {
-  return (n.title_uk && n.title_uk.trim().length > 0) ? n.title_uk : n.title;
-}
+type Tr = { title?: string; summary?: string; pending?: boolean };
 
 export default function News() {
   const [filter, setFilter] = useState<Filter>("Головне");
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [tr, setTr] = useState<Record<string, Tr>>({});
   const autoTriedRef = useRef(false);
+  const translatingRef = useRef<Set<string>>(new Set());
 
-  const news = useQuery({ queryKey: ["news"], queryFn: () => fetchNews(120), staleTime: 60_000 });
+  const news = useQuery({
+    queryKey: ["news"],
+    queryFn: () => fetchNews(120),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
 
   const filtered = useMemo<NewsItem[]>(() => {
     const all = news.data ?? [];
@@ -54,6 +60,16 @@ export default function News() {
   const clusters = useMemo<NewsCluster[]>(() => clusterAndRank(filtered), [filtered]);
   const heroCluster = clusters[0];
   const restClusters = clusters.slice(1);
+
+  // Display helpers — prefer DB translation, then client cache, then original.
+  function dispTitle(n: NewsItem): string {
+    if (n.title_uk && n.title_uk.trim()) return n.title_uk;
+    return tr[n.id]?.title || n.title;
+  }
+  function dispSummary(n: NewsItem): string | null {
+    if (n.summary_uk && n.summary_uk.trim()) return n.summary_uk;
+    return tr[n.id]?.summary || n.summary;
+  }
 
   function openNews(item: NewsItem) {
     bumpClick(item.id);
@@ -82,8 +98,7 @@ export default function News() {
     }
   }
 
-  // Auto-refresh on first entry so the page always loads fresh news without
-  // requiring a manual tap. Runs in the background and silently refetches.
+  // Auto-refresh once on mount if cache is stale/empty.
   useEffect(() => {
     if (autoTriedRef.current) return;
     if (news.isLoading) return;
@@ -93,23 +108,58 @@ export default function News() {
     const stale = !newest || (Date.now() - new Date(newest).getTime()) > 15 * 60_000;
     if (isEmpty || stale) {
       (async () => {
-        try {
-          await refreshNews();
-          await news.refetch();
-        } catch (e) {
-          console.error("[news] auto-refresh failed", e);
-        }
+        try { await refreshNews(); await news.refetch(); } catch (e) { console.error("[news] auto-refresh failed", e); }
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [news.isLoading]);
+
+  // Client-side fill-in translation: for every item that arrives without a
+  // server-side Ukrainian title, fire a translate-uk request (cached). Keeps
+  // the page fully Ukrainian even if the batch translator on the backend is
+  // still catching up.
+  useEffect(() => {
+    const items = (news.data ?? []).filter(
+      (n) => !(n.title_uk && n.title_uk.trim()) && !tr[n.id] && !translatingRef.current.has(n.id),
+    );
+    if (!items.length) return;
+    items.forEach((n) => translatingRef.current.add(n.id));
+    let cancelled = false;
+
+    (async () => {
+      const BATCH = 4;
+      for (let i = 0; i < items.length; i += BATCH) {
+        if (cancelled) return;
+        const batch = items.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.map(async (n) => {
+            const [t, s] = await Promise.all([
+              translateToUk(n.title, "news"),
+              n.summary ? translateToUk(n.summary, "news") : Promise.resolve(""),
+            ]);
+            return { id: n.id, title: t, summary: s };
+          }),
+        );
+        if (cancelled) return;
+        setTr((prev) => {
+          const next = { ...prev };
+          for (const r of results) {
+            if (r.status === "fulfilled") next[r.value.id] = { title: r.value.title, summary: r.value.summary };
+          }
+          return next;
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [news.data, tr]);
 
   return (
     <div className="space-y-4">
       <SeoHead title="Новини крипто" description="Свіжі крипто-новини з 14+ провідних джерел." />
       <PageHeader
         title="Новини"
-        subtitle="Головне з 20+ джерел · оновлення кожні 15 хв"
+        subtitle="Оновлюється автоматично кожну хвилину"
         right={
           <button onClick={doRefresh} disabled={refreshing} className="chip">
             <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Оновити
@@ -133,7 +183,7 @@ export default function News() {
           </div>
           <div className="p-4">
             <div className="text-[10px] uppercase tracking-wider text-[var(--gold)] font-semibold">{heroCluster.lead.source}</div>
-            <div className="mt-1.5 text-base font-bold leading-snug line-clamp-3">{displayTitle(heroCluster.lead)}</div>
+            <div className="mt-1.5 text-base font-bold leading-snug line-clamp-3">{dispTitle(heroCluster.lead)}</div>
             <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
               <span>{timeAgo(heroCluster.lead.published_at)} тому</span>
               {heroCluster.related.length > 0 && (
@@ -185,19 +235,15 @@ export default function News() {
           icon={Newspaper}
           tone="cyan"
           title={news.data?.length ? "Нічого за цим фільтром" : "Новин ще немає"}
-          description={news.data?.length ? "Спробуй інший таг або «Головне»." : "Натисни «Оновити» — підтягнемо свіжі з джерел."}
-          action={!news.data?.length ? (
-            <button onClick={doRefresh} className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-[#1A0F00]" style={{ background: "var(--grad-active)" }}>
-              <RefreshCw size={14} /> Завантажити новини
-            </button>
-          ) : undefined}
+          description={news.data?.length ? "Спробуй інший таг або «Головне»." : "Зачекай — підтягуємо свіжі з джерел."}
         />
       ) : (
         <div className="space-y-2">
           {restClusters.map((cl) => {
             const n = cl.lead;
             const badge = badgeFor(n);
-            const isOpen = expanded.has(cl.lead.id);
+            const isOpen = expanded.has(n.id);
+            const translated = !!(n.title_uk?.trim() || tr[n.id]?.title);
             return (
               <div key={n.id} className="surface overflow-hidden">
                 <button
@@ -215,11 +261,16 @@ export default function News() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         {badge && <span className={`text-[9px] font-bold ${badge.tone}`}>{badge.label}</span>}
+                        {!translated && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] text-[var(--text-muted)]">
+                            <Languages size={9} /> перекладається…
+                          </span>
+                        )}
                       </div>
-                      <div className="text-sm font-medium leading-snug line-clamp-2">{displayTitle(n)}</div>
-                      {(n.summary_uk || n.summary) && (
+                      <div className="text-sm font-medium leading-snug line-clamp-2">{dispTitle(n)}</div>
+                      {dispSummary(n) && (
                         <div className="mt-1 text-[11px] leading-snug text-[var(--text-muted)] line-clamp-2">
-                          {n.summary_uk || n.summary}
+                          {dispSummary(n)}
                         </div>
                       )}
                       <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] flex-wrap">
@@ -252,7 +303,7 @@ export default function News() {
                             className="w-full text-left py-1.5 text-[11px] hover:text-[var(--text)] text-[var(--text-muted)] flex items-center gap-2"
                           >
                             <span className="text-[var(--gold)] font-semibold shrink-0">{r.source}</span>
-                            <span className="truncate">{displayTitle(r)}</span>
+                            <span className="truncate">{dispTitle(r)}</span>
                           </button>
                         ))}
                       </div>
