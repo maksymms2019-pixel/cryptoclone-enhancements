@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import type { CoinRow } from "@/lib/markets";
 import { fmtPct, fmtUsd } from "@/lib/format";
 
@@ -36,9 +38,13 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
   const bubblesRef = useRef<Bubble[]>([]);
   const [focused, setFocused] = useState<Bubble | null>(null);
   const draggingRef = useRef<{ b: Bubble; offX: number; offY: number } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const data = useMemo(
-    () => coins.filter((c) => isFinite(pctFor(c, range))).slice(0, 80),
+    () => coins
+      .filter((c) => c.id !== "figure-heloc")
+      .filter((c) => isFinite(pctFor(c, range)))
+      .slice(0, 80),
     [coins, range],
   );
 
@@ -72,6 +78,8 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
       const sizeFromMove = Math.abs(pct) / maxAbs;
       const r = minR + (sizeFromMcap * 0.7 + sizeFromMove * 0.3) * (maxR - minR);
       const img = new Image();
+      // Critical for canvas export: request CORS so toDataURL doesn't taint.
+      img.crossOrigin = "anonymous";
       const sym = c.symbol.toLowerCase();
       const fallbacks = [
         c.image,
@@ -81,7 +89,6 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
       img.onerror = () => {
         idx++;
         if (idx < fallbacks.length) img.src = fallbacks[idx];
-        // else: leave img incomplete → bubble renders without icon (monogram via text)
       };
       img.src = fallbacks[0];
       return {
@@ -99,7 +106,6 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
       for (let i = 0; i < bs.length; i++) {
         const b = bs[i];
         if (draggingRef.current?.b === b) continue;
-        // gentle pull to center
         b.vx += (cx0 - b.x) * 0.00015;
         b.vy += (cy0 - b.y) * 0.00015;
         b.vx *= 0.985; b.vy *= 0.985;
@@ -142,10 +148,11 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
           ctx.beginPath();
           ctx.arc(b.x, iy, s / 2, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(b.img, b.x - s / 2, iy - s / 2, s, s);
+          try {
+            ctx.drawImage(b.img, b.x - s / 2, iy - s / 2, s, s);
+          } catch { /* ignore */ }
           ctx.restore();
         } else {
-          // Monogram fallback: solid disc with first letter of the symbol.
           const s = b.r * 0.5;
           const iy = b.y - b.r * 0.42;
           ctx.save();
@@ -167,11 +174,9 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
           ctx.fillStyle = "#F4F7FA";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          // Symbol — bigger, just below center
           const symSize = Math.max(11, Math.min(20, b.r * 0.40));
           ctx.font = `800 ${symSize}px Inter, sans-serif`;
           ctx.fillText(b.symbol.toUpperCase(), b.x, b.y + b.r * 0.05);
-          // Percent — second line
           const pctSize = Math.max(10, Math.min(16, b.r * 0.30));
           ctx.font = `700 ${pctSize}px Inter, sans-serif`;
           ctx.fillText(fmtPct(b.pct, 1), b.x, b.y + b.r * 0.42);
@@ -182,7 +187,6 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
     };
     raf = requestAnimationFrame(step);
 
-    // Pointer interaction: drag + tap
     const getPos = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -219,7 +223,7 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
         const hit = bubblesRef.current.find((b) => Math.hypot(p.x - b.x, p.y - b.y) <= b.r);
         if (hit) setFocused(hit);
       } else if (wasDragging) {
-        // give it a slight nudge
+        // nudge
       }
     };
     canvas.addEventListener("pointerdown", onDown);
@@ -240,11 +244,87 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
   const upCount = data.filter((c) => pctFor(c, range) > 0).length;
   const downCount = data.length - upCount;
 
+  async function savePng() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setSaving(true);
+    try {
+      // Compose a framed export canvas with header + the bubbles + footer.
+      const W = canvas.width;
+      const H = canvas.height;
+      const PAD = 32;
+      const HEADER = 80;
+      const FOOTER = 60;
+      const out = document.createElement("canvas");
+      out.width = W + PAD * 2;
+      out.height = H + PAD * 2 + HEADER + FOOTER;
+      const ctx = out.getContext("2d")!;
+      ctx.fillStyle = "#06141C";
+      ctx.fillRect(0, 0, out.width, out.height);
+
+      // Header
+      ctx.fillStyle = "#F8FAFC";
+      ctx.font = "800 32px Inter, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText("CRYPTO", PAD, PAD + HEADER / 2);
+      const cw = ctx.measureText("CRYPTO").width;
+      ctx.fillStyle = "#E7B650";
+      ctx.fillText("TIME", PAD + cw, PAD + HEADER / 2);
+      ctx.fillStyle = "#8A9BA8";
+      ctx.font = "600 18px Inter, sans-serif";
+      const sub = `Bubbles · ${range}`;
+      ctx.fillText(sub, PAD + cw + ctx.measureText("TIME").width + 18, PAD + HEADER / 2);
+      const dateStr = new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long" });
+      ctx.textAlign = "right";
+      ctx.fillText(dateStr, out.width - PAD, PAD + HEADER / 2);
+      ctx.textAlign = "left";
+
+      ctx.drawImage(canvas, PAD, PAD + HEADER, W, H);
+
+      // Footer summary
+      ctx.fillStyle = "#8A9BA8";
+      ctx.font = "600 16px Inter, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`▲ ${upCount}   ▼ ${downCount}`, PAD, PAD + HEADER + H + FOOTER / 2);
+      ctx.textAlign = "right";
+      ctx.fillText("cryptotime.app", out.width - PAD, PAD + HEADER + H + FOOTER / 2);
+
+      const dataUrl = out.toDataURL("image/png");
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], `cryptotime-bubbles-${new Date().toISOString().slice(0, 10)}.png`, { type: "image/png" });
+      const navAny = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean };
+      if (navAny.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "CryptoTime — Bubbles" });
+      } else {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = file.name;
+        a.click();
+      }
+      toast.success("Картинку збережено");
+    } catch (e) {
+      console.error(e);
+      toast.error("Не вдалось згенерувати картинку");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] px-1">
         <span><span className="text-[var(--accent)] font-bold">▲ {upCount}</span> · <span className="text-[var(--danger)] font-bold">▼ {downCount}</span></span>
-        <span>Розмір = капіталізація · колір = {range}</span>
+        <div className="flex items-center gap-2">
+          <span>Розмір = капіталізація · колір = {range}</span>
+          <button
+            onClick={savePng}
+            disabled={saving}
+            className="chip"
+            aria-label="Завантажити картинку"
+          >
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+          </button>
+        </div>
       </div>
       <div ref={wrapRef} className="surface relative w-full overflow-hidden" style={{ height: "min(72vh, 640px)", minHeight: 420 }}>
         <canvas ref={canvasRef} className="absolute inset-0 cursor-grab active:cursor-grabbing touch-none" />
