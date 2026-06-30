@@ -111,6 +111,14 @@ function pctFor(c: CoinRow, r: Range): number {
   return c.price_change_percentage_24h ?? 0;
 }
 
+// Story export dimensions — portrait, full-bleed treemap, tiny header,
+// legend strip at the bottom (matches the reference layout the user sent).
+const STORY_W = 1080;
+const STORY_HEAD = 90;
+const STORY_BODY = 1170;
+const STORY_LEGEND = 90;
+const STORY_H = STORY_HEAD + STORY_BODY + STORY_LEGEND; // 1350
+
 export default function Heatmap() {
   const [range, setRange] = useState<50 | 100>(100);
   const [mode, setMode] = useState<"map" | "bubbles">("map");
@@ -122,9 +130,6 @@ export default function Heatmap() {
   const [W, setW] = useState(360);
   const [H, setH] = useState(540);
   const [savingPng, setSavingPng] = useState(false);
-  // Snapshot of {originalUrl -> dataURL} used only during PNG export. SVG
-  // <image href="https://…"> on a foreign CDN taints the canvas; swapping
-  // hrefs to base64 data URLs before serialization makes export reliable.
   const [imgOverride, setImgOverride] = useState<Record<string, string> | null>(null);
 
   useEffect(() => {
@@ -133,7 +138,6 @@ export default function Heatmap() {
     const ro = new ResizeObserver(() => {
       const w = Math.max(280, wrap.clientWidth - 12);
       setW(w);
-      // 1:1 aspect ratio — heatmap is now a perfect square.
       setH(w);
     });
     ro.observe(wrap);
@@ -154,21 +158,22 @@ export default function Heatmap() {
     return Math.max(5, Math.min(80, Math.round(p95)));
   }, [top.data, timeRange]);
 
-  const cells = useMemo(() => {
-    const items: Cell[] = (top.data ?? [])
-      .filter((c) => c.market_cap > 0)
+  const sortedItems = useMemo<Cell[]>(() => {
+    return (top.data ?? [])
+      .filter((c) => c.market_cap > 0 && c.id !== "figure-heloc")
       .map((c, idx) => ({
         id: c.id, symbol: c.symbol, image: c.image,
         value: c.market_cap, pct: pctFor(c, timeRange),
-        price: c.current_price,
-        rank: idx, // position in market-cap-sorted list
+        price: c.current_price, rank: idx,
       }))
       .sort((a, b) => b.value - a.value);
-    return squarify(items, { x: 0, y: 0, w: W, h: H });
-  }, [top.data, timeRange, W, H]);
+  }, [top.data, timeRange]);
+
+  const cells = useMemo(() => squarify(sortedItems, { x: 0, y: 0, w: W, h: H }), [sortedItems, W, H]);
+  const exportCells = useMemo(() => squarify(sortedItems, { x: 0, y: 0, w: STORY_W, h: STORY_BODY }), [sortedItems]);
 
   const legendStops = useMemo(
-    () => [-legendMax, -legendMax * 0.6, 0, legendMax * 0.6, legendMax],
+    () => [-legendMax, -legendMax * 0.66, -legendMax * 0.33, 0, legendMax * 0.33, legendMax * 0.66, legendMax],
     [legendMax],
   );
   const legendGradient = `linear-gradient(90deg, ${legendStops.map((s) => colorFor(s, legendMax)).join(", ")})`;
@@ -184,9 +189,7 @@ export default function Heatmap() {
         fr.onerror = () => reject(fr.error);
         fr.readAsDataURL(blob);
       });
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
   async function savePng() {
@@ -194,16 +197,11 @@ export default function Heatmap() {
     if (!node) return;
     setSavingPng(true);
     try {
-      // 1) Pre-fetch every coin icon and convert to a base64 data URL so the
-      // SVG isn't pointing at a foreign-origin asset during canvas raster.
-      const urls = Array.from(new Set(cells.map((c) => c.image).filter(Boolean)));
-      const pairs = await Promise.all(
-        urls.map(async (u) => [u, await fetchAsDataUrl(u)] as const),
-      );
+      const urls = Array.from(new Set(exportCells.map((c) => c.image).filter(Boolean)));
+      const pairs = await Promise.all(urls.map(async (u) => [u, await fetchAsDataUrl(u)] as const));
       const map: Record<string, string> = {};
       for (const [u, d] of pairs) if (d) map[u] = d;
       setImgOverride(map);
-      // Wait two frames so React commits the swapped <image href> attributes.
       await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
       const dataUrl = await toPng(node, {
@@ -235,6 +233,60 @@ export default function Heatmap() {
       setImgOverride(null);
       setSavingPng(false);
     }
+  }
+
+  // Reusable cell renderer — same look on screen and in export.
+  function renderCell(c: Placed, opts: { scale?: number } = {}) {
+    const scale = opts.scale ?? 1;
+    const minSide = Math.min(c.w, c.h);
+    const sizeBase = Math.min(c.w * 0.18, c.h * 0.18);
+    const symFs = Math.max(8 * scale, Math.min(sizeBase, 22 * scale));
+    const priceFs = Math.max(8 * scale, Math.min(symFs * 0.78, 16 * scale));
+    const iconSize = Math.max(14 * scale, Math.min(Math.min(c.w, c.h) * 0.32, 56 * scale));
+    const isTop10 = (c.rank ?? 99) < 10;
+    const showAll = minSide > 80 * scale || (isTop10 && minSide > 44 * scale);
+    const showSymPrice = minSide > 46 * scale;
+    const showSym = minSide > 22 * scale;
+    const top10SmallIcon = isTop10 && !showAll && minSide > 22 * scale;
+    const effIcon = top10SmallIcon ? Math.max(12 * scale, Math.min(minSide * 0.42, 26 * scale)) : iconSize;
+    const cx = c.x + c.w / 2;
+    const cy = c.y + c.h / 2;
+    const stackH = showAll
+      ? effIcon + symFs + priceFs + 10
+      : top10SmallIcon ? effIcon + symFs + 4 : showSymPrice ? symFs + priceFs + 4 : symFs;
+    const topY = cy - stackH / 2;
+    return (
+      <g key={c.id} onClick={() => setPreview(c)} style={{ cursor: "pointer" }}>
+        <rect
+          x={c.x + 0.7} y={c.y + 0.7}
+          width={Math.max(0, c.w - 1.4)} height={Math.max(0, c.h - 1.4)}
+          fill={colorFor(c.pct, legendMax)} stroke="rgba(6,20,28,.9)" strokeWidth="1" rx="2"
+        />
+        {(showAll || top10SmallIcon) && c.image && (
+          <image href={imgOverride?.[c.image] ?? c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+            crossOrigin="anonymous" style={{ pointerEvents: "none" }} preserveAspectRatio="xMidYMid meet" />
+        )}
+        {(showAll || showSymPrice || showSym || top10SmallIcon) && (
+          <text x={cx}
+            y={showAll ? topY + effIcon + symFs * 0.7
+                : top10SmallIcon ? topY + effIcon + symFs * 0.7
+                : showSymPrice ? cy - priceFs * 0.55 : cy}
+            textAnchor="middle" dominantBaseline="central"
+            fill="#F8FAFC" fontWeight={800} fontSize={symFs} style={{ pointerEvents: "none" }}>
+            {c.symbol.toUpperCase()}
+          </text>
+        )}
+        {(showAll || (showSymPrice && !top10SmallIcon)) && (
+          <text x={cx}
+            y={showAll ? topY + effIcon + symFs * 1.55 + priceFs * 0.3 : cy + symFs * 0.55}
+            textAnchor="middle" dominantBaseline="central"
+            fill="rgba(248,250,252,.88)" fontSize={priceFs} fontWeight={600}
+            style={{ pointerEvents: "none" }}>
+            {fmtUsd(c.price, { digits: c.price < 1 ? 4 : 2 })}
+          </text>
+        )}
+      </g>
+    );
   }
 
   return (
@@ -280,8 +332,8 @@ export default function Heatmap() {
         ))}
       </div>
 
-      {/* EXPORTABLE BLOCK — legend + heatmap together (this is what gets saved as PNG) */}
-      <div ref={exportRef} className="rounded-2xl p-3 space-y-2" style={{ background: "#06141C", border: "1px solid rgba(231,182,80,.18)" }}>
+      {/* On-screen heatmap */}
+      <div className="rounded-2xl p-3 space-y-2" style={{ background: "#06141C", border: "1px solid rgba(231,182,80,.18)" }}>
         <div className="flex items-center justify-between">
           <div className="text-[11px] font-bold tracking-wider">
             CRYPTO<span style={{ color: "var(--gold)" }}>TIME</span>
@@ -294,7 +346,6 @@ export default function Heatmap() {
           </div>
         </div>
 
-        {/* Legend — dynamic */}
         <div className="px-1 py-1">
           <div className="h-2 w-full rounded-full" style={{ background: legendGradient }} />
           <div className="mt-1 flex items-center justify-between">
@@ -307,104 +358,82 @@ export default function Heatmap() {
         </div>
 
         <div ref={wrapRef}>
-        {top.isLoading ? (
-          <div className="surface p-4"><div className="skeleton h-[540px] w-full" /></div>
-        ) : mode === "bubbles" ? (
-          <CryptoBubbles coins={top.data ?? []} range={timeRange} />
-        ) : (
-          <div className="surface p-1.5 overflow-hidden relative">
-            <div className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
-              <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-                {cells.map((c) => {
-                  const minSide = Math.min(c.w, c.h);
-                  const sizeBase = Math.min(c.w * 0.18, c.h * 0.18);
-                  const symFs = Math.max(8, Math.min(sizeBase, 22));
-                  const priceFs = Math.max(8, Math.min(symFs * 0.78, 16));
-                  const iconSize = Math.max(14, Math.min(Math.min(c.w, c.h) * 0.32, 56));
-                  const isTop10 = (c.rank ?? 99) < 10;
-                  // Top-10 always gets an icon (per user request). For smaller
-                  // top-10 tiles we shrink the icon and skip the price line so
-                  // it still looks clean.
-                  const showAll = minSide > 80 || (isTop10 && minSide > 44);
-                  const showSymPrice = minSide > 46;
-                  const showSym = minSide > 22;
-                  // For top-10 tiles that are tiny we still want an icon — use
-                  // a compact size and skip the price under it.
-                  const top10SmallIcon = isTop10 && !showAll && minSide > 22;
-                  const effIcon = top10SmallIcon
-                    ? Math.max(12, Math.min(minSide * 0.42, 26))
-                    : iconSize;
-                  const cx = c.x + c.w / 2;
-                  const cy = c.y + c.h / 2;
-                  const stackH = showAll
-                    ? effIcon + symFs + priceFs + 10
-                    : top10SmallIcon
-                      ? effIcon + symFs + 4
-                      : showSymPrice ? symFs + priceFs + 4 : symFs;
-                  const topY = cy - stackH / 2;
-                  return (
-                    <g key={c.id} onClick={() => setPreview(c)} style={{ cursor: "pointer" }}>
-                      <rect
-                        x={c.x + 0.7} y={c.y + 0.7}
-                        width={Math.max(0, c.w - 1.4)} height={Math.max(0, c.h - 1.4)}
-                        fill={colorFor(c.pct, legendMax)} stroke="rgba(6,20,28,.9)" strokeWidth="1" rx="2"
-                      />
-                      {(showAll || top10SmallIcon) && c.image && (
-                        <image href={imgOverride?.[c.image] ?? c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
-                          crossOrigin="anonymous"
-                          style={{ pointerEvents: "none" }} preserveAspectRatio="xMidYMid meet" />
-                      )}
-                      {(showAll || showSymPrice || showSym || top10SmallIcon) && (
-                        <text
-                          x={cx}
-                          y={
-                            showAll
-                              ? topY + effIcon + symFs * 0.7
-                              : top10SmallIcon
-                                ? topY + effIcon + symFs * 0.7
-                                : showSymPrice ? cy - priceFs * 0.55 : cy
-                          }
-                          textAnchor="middle" dominantBaseline="central"
-                          fill="#F8FAFC" fontWeight={800} fontSize={symFs} style={{ pointerEvents: "none" }}>
-                          {c.symbol.toUpperCase()}
-                        </text>
-                      )}
-                      {(showAll || (showSymPrice && !top10SmallIcon)) && (
-                        <text
-                          x={cx}
-                          y={showAll ? topY + effIcon + symFs * 1.55 + priceFs * 0.3 : cy + symFs * 0.55}
-                          textAnchor="middle" dominantBaseline="central"
-                          fill="rgba(248,250,252,.88)" fontSize={priceFs} fontWeight={600}
-                          style={{ pointerEvents: "none" }}>
-                          {fmtUsd(c.price, { digits: c.price < 1 ? 4 : 2 })}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-
-            {/* Preview card on tap */}
-            {preview && (
-              <div className="absolute inset-x-2 bottom-2 surface p-3 flex items-center gap-3 shadow-2xl animate-coin-pop">
-                <img src={preview.image} alt="" className="h-10 w-10 rounded-full" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold">{preview.symbol.toUpperCase()}</div>
-                  <div className="text-[11px] tabular-nums text-[var(--text-muted)]">{fmtUsd(preview.price)}</div>
-                </div>
-                <div className={`text-sm font-bold tabular-nums ${preview.pct >= 0 ? "text-[var(--accent)]" : "text-[var(--danger)]"}`}>
-                  {fmtPct(preview.pct)}
-                </div>
-                <Link to={`/coin/${preview.id}`} className="chip" data-active="true" onClick={() => setPreview(null)}>Деталі</Link>
-                <button onClick={() => setPreview(null)} className="chip" aria-label="Закрити">✕</button>
+          {top.isLoading ? (
+            <div className="surface p-4"><div className="skeleton h-[540px] w-full" /></div>
+          ) : mode === "bubbles" ? (
+            <CryptoBubbles coins={top.data ?? []} range={timeRange} />
+          ) : (
+            <div className="surface p-1.5 overflow-hidden relative">
+              <div className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
+                <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+                  {cells.map((c) => renderCell(c))}
+                </svg>
               </div>
-            )}
-          </div>
-        )}
+
+              {preview && (
+                <div className="absolute inset-x-2 bottom-2 surface p-3 flex items-center gap-3 shadow-2xl animate-coin-pop">
+                  <img src={preview.image} alt="" className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold">{preview.symbol.toUpperCase()}</div>
+                    <div className="text-[11px] tabular-nums text-[var(--text-muted)]">{fmtUsd(preview.price)}</div>
+                  </div>
+                  <div className={`text-sm font-bold tabular-nums ${preview.pct >= 0 ? "text-[var(--accent)]" : "text-[var(--danger)]"}`}>
+                    {fmtPct(preview.pct)}
+                  </div>
+                  <Link to={`/coin/${preview.id}`} className="chip" data-active="true" onClick={() => setPreview(null)}>Деталі</Link>
+                  <button onClick={() => setPreview(null)} className="chip" aria-label="Закрити">✕</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
-      {/* /export block */}
+
+      {/* OFF-SCREEN STORY-FORMAT EXPORT — 1080×1350, no padding, legend at bottom */}
+      <div style={{ position: "fixed", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
+        <div
+          ref={exportRef}
+          style={{
+            width: STORY_W, height: STORY_H, background: "#06141C", color: "#F8FAFC",
+            fontFamily: "Inter, system-ui, sans-serif", display: "flex", flexDirection: "column",
+          }}
+        >
+          {/* Header */}
+          <div style={{ height: STORY_HEAD, padding: "0 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 0.8 }}>
+              CRYPTO<span style={{ color: "#E7B650" }}>TIME</span>
+              <span style={{ marginLeft: 14, fontSize: 16, fontWeight: 600, color: "#8A9BA8", letterSpacing: 0.4 }}>
+                Heatmap · Топ-{range} · {timeRange}
+              </span>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#8A9BA8" }}>
+              {new Date().toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" })}
+            </div>
+          </div>
+
+          {/* Body — full-bleed treemap */}
+          <svg
+            width={STORY_W} height={STORY_BODY}
+            viewBox={`0 0 ${STORY_W} ${STORY_BODY}`}
+            preserveAspectRatio="none"
+            style={{ display: "block" }}
+          >
+            {exportCells.map((c) => renderCell(c, { scale: 2.2 }))}
+          </svg>
+
+          {/* Legend strip — bottom */}
+          <div style={{ height: STORY_LEGEND, padding: "18px 32px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div style={{ height: 18, borderRadius: 4, background: legendGradient }} />
+            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between" }}>
+              {legendStops.map((p, i) => (
+                <span key={i} style={{ fontSize: 16, fontWeight: 700, color: "#C8D2DC" }}>
+                  {p > 0 ? `+${p.toFixed(0)}` : p.toFixed(0)}%
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <p className="text-xs text-[var(--text-muted)] text-center">
         {mode === "bubbles"
@@ -417,6 +446,7 @@ export default function Heatmap() {
           <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Найбільші рухи · {timeRange}</h2>
           <div className="surface divide-y divide-[var(--line)]">
             {[...top.data]
+              .filter((c) => c.id !== "figure-heloc")
               .sort((a, b) => Math.abs(pctFor(b, timeRange)) - Math.abs(pctFor(a, timeRange)))
               .slice(0, 5)
               .map((c) => {
