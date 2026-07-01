@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { BrandLogo, BrandWordmark } from "@/components/BrandLogo";
 import { SeoHead } from "@/components/SeoHead";
-import { LogOut, Send, Palette, Globe, Trash2, Download, Loader2, Map, Calculator, Bell } from "lucide-react";
+import { LogOut, Send, Palette, Globe, Trash2, Download, Loader2, Map, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
 import { useState } from "react";
@@ -56,12 +56,11 @@ export default function Settings() {
   });
 
   async function exportData() {
-    const [trades, alerts, watchlist] = await Promise.all([
+    const [trades, watchlist] = await Promise.all([
       supabase.from("trades").select("*"),
-      supabase.from("alerts").select("*"),
       supabase.from("watchlist").select("*"),
     ]);
-    const payload = { exported_at: new Date().toISOString(), trades: trades.data, alerts: alerts.data, watchlist: watchlist.data };
+    const payload = { exported_at: new Date().toISOString(), trades: trades.data, watchlist: watchlist.data };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -76,7 +75,6 @@ export default function Settings() {
       : "Delete data permanently? This cannot be undone.")) return;
     await Promise.all([
       supabase.from("trades").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
-      supabase.from("alerts").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
       supabase.from("watchlist").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
       supabase.from("holdings").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
     ]);
@@ -219,10 +217,6 @@ export default function Settings() {
         <Link to="/calc" className="flex items-center gap-3 px-4 py-3 hover:bg-white/[.02]">
           <Calculator size={16} className="text-[var(--text-muted)]" />
           <span className="flex-1 text-sm">{t("common.calc")}</span>
-        </Link>
-        <Link to="/alerts" className="flex items-center gap-3 px-4 py-3 hover:bg-white/[.02]">
-          <Bell size={16} className="text-[var(--text-muted)]" />
-          <span className="flex-1 text-sm">{t("common.alerts")}</span>
         </Link>
       </section>
 

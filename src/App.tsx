@@ -8,7 +8,7 @@ import Dashboard from "@/pages/Dashboard";
 import Markets from "@/pages/Markets";
 import Portfolio from "@/pages/Portfolio";
 import News from "@/pages/News";
-import Alerts from "@/pages/Alerts";
+
 import Calc from "@/pages/Calc";
 import Settings from "@/pages/Settings";
 import CoinDetail from "@/pages/CoinDetail";
@@ -38,7 +38,7 @@ export default function App() {
             <Route path="/markets" element={<Markets />} />
             <Route path="/portfolio" element={<AuthGuard><Portfolio /></AuthGuard>} />
             <Route path="/news" element={<News />} />
-            <Route path="/alerts" element={<AuthGuard><Alerts /></AuthGuard>} />
+            
             <Route path="/calc" element={<Calc />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/coin/:id" element={<CoinDetail />} />

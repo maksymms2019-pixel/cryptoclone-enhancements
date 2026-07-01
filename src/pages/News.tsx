@@ -1,11 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchNews, refreshNews, bumpClick, clusterAndRank, type NewsItem, type NewsCluster } from "@/lib/news";
-import { translateToUk } from "@/lib/translate";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { SeoHead } from "@/components/SeoHead";
-import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp, Languages } from "lucide-react";
+import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { timeAgo } from "@/lib/format";
 import { toast } from "sonner";
 import { openExternal } from "@/lib/telegram";
@@ -33,22 +32,19 @@ function badgeFor(item: NewsItem): { label: string; tone: string } | null {
   return null;
 }
 
-type Tr = { title?: string; summary?: string; pending?: boolean };
-
 export default function News() {
   const [filter, setFilter] = useState<Filter>("Головне");
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [tr, setTr] = useState<Record<string, Tr>>({});
-  const autoTriedRef = useRef(false);
-  const translatingRef = useRef<Set<string>>(new Set());
+  const lastRefreshRef = useRef<number>(0);
 
   const news = useQuery({
     queryKey: ["news"],
     queryFn: () => fetchNews(120),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60_000,
+    refetchInterval: 2 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 
   const filtered = useMemo<NewsItem[]>(() => {
@@ -61,14 +57,12 @@ export default function News() {
   const heroCluster = clusters[0];
   const restClusters = clusters.slice(1);
 
-  // Display helpers — prefer DB translation, then client cache, then original.
+  // Show Ukrainian if backend provided it, otherwise fall back silently to original.
   function dispTitle(n: NewsItem): string {
-    if (n.title_uk && n.title_uk.trim()) return n.title_uk;
-    return tr[n.id]?.title || n.title;
+    return (n.title_uk && n.title_uk.trim()) || n.title;
   }
   function dispSummary(n: NewsItem): string | null {
-    if (n.summary_uk && n.summary_uk.trim()) return n.summary_uk;
-    return tr[n.id]?.summary || n.summary;
+    return (n.summary_uk && n.summary_uk.trim()) || n.summary;
   }
 
   function openNews(item: NewsItem) {
@@ -85,10 +79,17 @@ export default function News() {
 
   async function doRefresh() {
     if (refreshing) return;
+    // Debounce manual refresh to 10s so the edge function isn't spammed.
+    const since = Date.now() - lastRefreshRef.current;
+    if (since < 10_000) {
+      toast.message(`Зачекай ${Math.ceil((10_000 - since) / 1000)} с`);
+      return;
+    }
+    lastRefreshRef.current = Date.now();
     setRefreshing(true);
     try {
-      const r = await refreshNews() as { inserted?: number };
-      toast.success(`Оновлено · ${r?.inserted ?? 0} нових`);
+      const r = await refreshNews() as { inserted?: number; translated?: number };
+      toast.success(`Оновлено · ${r?.inserted ?? 0} нових${r?.translated ? ` · перекладено ${r.translated}` : ""}`);
       await news.refetch();
     } catch (e) {
       toast.error("Не вдалось оновити");
@@ -98,68 +99,28 @@ export default function News() {
     }
   }
 
-  // Auto-refresh once on mount if cache is stale/empty.
+  // First-load bootstrap: if cache is empty or stale, trigger a background refresh once.
+  const bootRef = useRef(false);
   useEffect(() => {
-    if (autoTriedRef.current) return;
+    if (bootRef.current) return;
     if (news.isLoading) return;
-    autoTriedRef.current = true;
-    const isEmpty = (news.data?.length ?? 0) === 0;
+    bootRef.current = true;
     const newest = news.data?.[0]?.published_at;
-    const stale = !newest || (Date.now() - new Date(newest).getTime()) > 15 * 60_000;
-    if (isEmpty || stale) {
+    const stale = !newest || (Date.now() - new Date(newest).getTime()) > 10 * 60_000;
+    if (stale) {
       (async () => {
-        try { await refreshNews(); await news.refetch(); } catch (e) { console.error("[news] auto-refresh failed", e); }
+        try { await refreshNews(); await news.refetch(); } catch (e) { console.error("[news] boot refresh failed", e); }
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [news.isLoading]);
 
-  // Client-side fill-in translation: for every item that arrives without a
-  // server-side Ukrainian title, fire a translate-uk request (cached). Keeps
-  // the page fully Ukrainian even if the batch translator on the backend is
-  // still catching up.
-  useEffect(() => {
-    const items = (news.data ?? []).filter(
-      (n) => !(n.title_uk && n.title_uk.trim()) && !tr[n.id] && !translatingRef.current.has(n.id),
-    );
-    if (!items.length) return;
-    items.forEach((n) => translatingRef.current.add(n.id));
-    let cancelled = false;
-
-    (async () => {
-      const BATCH = 4;
-      for (let i = 0; i < items.length; i += BATCH) {
-        if (cancelled) return;
-        const batch = items.slice(i, i + BATCH);
-        const results = await Promise.allSettled(
-          batch.map(async (n) => {
-            const [t, s] = await Promise.all([
-              translateToUk(n.title, "news"),
-              n.summary ? translateToUk(n.summary, "news") : Promise.resolve(""),
-            ]);
-            return { id: n.id, title: t, summary: s };
-          }),
-        );
-        if (cancelled) return;
-        setTr((prev) => {
-          const next = { ...prev };
-          for (const r of results) {
-            if (r.status === "fulfilled") next[r.value.id] = { title: r.value.title, summary: r.value.summary };
-          }
-          return next;
-        });
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [news.data, tr]);
-
   return (
     <div className="space-y-4">
-      <SeoHead title="Новини крипто" description="Свіжі крипто-новини з 14+ провідних джерел." />
+      <SeoHead title="Новини крипто" description="Свіжі крипто-новини з 20+ провідних джерел, українською." />
       <PageHeader
         title="Новини"
-        subtitle="Оновлюється автоматично кожну хвилину"
+        subtitle="Оновлюється кожні 2 хвилини"
         right={
           <button onClick={doRefresh} disabled={refreshing} className="chip">
             <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Оновити
@@ -243,7 +204,6 @@ export default function News() {
             const n = cl.lead;
             const badge = badgeFor(n);
             const isOpen = expanded.has(n.id);
-            const translated = !!(n.title_uk?.trim() || tr[n.id]?.title);
             return (
               <div key={n.id} className="surface overflow-hidden">
                 <button
@@ -259,14 +219,11 @@ export default function News() {
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        {badge && <span className={`text-[9px] font-bold ${badge.tone}`}>{badge.label}</span>}
-                        {!translated && (
-                          <span className="inline-flex items-center gap-0.5 text-[9px] text-[var(--text-muted)]">
-                            <Languages size={9} /> перекладається…
-                          </span>
-                        )}
-                      </div>
+                      {badge && (
+                        <div className="mb-0.5">
+                          <span className={`text-[9px] font-bold ${badge.tone}`}>{badge.label}</span>
+                        </div>
+                      )}
                       <div className="text-sm font-medium leading-snug line-clamp-2">{dispTitle(n)}</div>
                       {dispSummary(n) && (
                         <div className="mt-1 text-[11px] leading-snug text-[var(--text-muted)] line-clamp-2">
@@ -318,3 +275,4 @@ export default function News() {
     </div>
   );
 }
+

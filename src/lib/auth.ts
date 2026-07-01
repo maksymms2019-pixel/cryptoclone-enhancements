@@ -67,12 +67,10 @@ export async function sendReset(email: string) {
 }
 
 export async function signInGoogle() {
-  return supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${window.location.origin}/`,
-      queryParams: { prompt: "select_account" },
-    },
+  const { lovable } = await import("@/integrations/lovable");
+  return lovable.auth.signInWithOAuth("google", {
+    redirect_uri: window.location.origin,
+    extraParams: { prompt: "select_account" },
   });
 }
 

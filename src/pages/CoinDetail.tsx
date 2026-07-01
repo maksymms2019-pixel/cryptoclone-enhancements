@@ -7,7 +7,7 @@ import { translateToUk } from "@/lib/translate";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, getAppUserId } from "@/lib/auth";
 import { fmtUsd, fmtPct, fmtCompact, toneFromPct, timeAgo } from "@/lib/format";
-import { ArrowLeft, Star, Bell, Calculator, ExternalLink, Globe, Twitter, Github, MessageCircle, Newspaper, Languages, Loader2 } from "lucide-react";
+import { ArrowLeft, Star, Calculator, ExternalLink, Globe, Twitter, Github, MessageCircle, Newspaper, Languages, Loader2 } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { PriceChart } from "@/components/PriceChart";
 import { SeoHead } from "@/components/SeoHead";
@@ -158,9 +158,8 @@ export default function CoinDetail() {
       <PriceChart coinId={data.id} symbol={data.symbol} />
 
       {/* Quick actions */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <ActionButton to={`/portfolio?add=${data.id}`} icon={Star} label="В портфель" />
-        <ActionButton to={`/alerts?coin=${data.id}&price=${data.current_price}`} icon={Bell} label="Алерт" />
         <ActionButton to={`/calc?from=${data.id}`} icon={Calculator} label="Конвертер" />
       </div>
 
@@ -197,17 +196,6 @@ export default function CoinDetail() {
         )}
       </section>
 
-      {/* Categories */}
-      {data.categories && data.categories.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Категорії</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {data.categories.map((c) => (
-              <span key={c} className="chip text-[11px]">{c}</span>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Social links */}
       {(data.homepage || data.twitter || data.reddit || data.github) && (

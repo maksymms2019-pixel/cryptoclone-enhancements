@@ -62,7 +62,10 @@ export default function Auth() {
     setBusy(true);
     try {
       const r = await signInGoogle();
-      if (r.error) toast.error("Не вдалось увійти через Google");
+      if (r.error) { toast.error("Не вдалось увійти через Google"); return; }
+      if (r.redirected) return;
+      toast.success("З поверненням!");
+      nav("/", { replace: true });
     } finally {
       setBusy(false);
     }
