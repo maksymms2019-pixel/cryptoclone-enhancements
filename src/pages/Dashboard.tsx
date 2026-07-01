@@ -277,24 +277,6 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ALERTS TEASER */}
-      <section className="surface p-4">
-        <div className="flex items-center gap-3">
-          <div
-            className="flex h-10 w-10 items-center justify-center rounded-xl"
-            style={{ background: "rgba(231,182,80,.10)" }}
-          >
-            <Bell size={18} className="text-[var(--gold)]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium">Алерти в Telegram</div>
-            <div className="text-xs text-[var(--text-muted)]">Сповіщення коли ціна перетне поріг</div>
-          </div>
-          <Link to="/alerts" className="chip">
-            Створити
-          </Link>
-        </div>
-      </section>
 
       {/* HEATMAP TEASER */}
       <section className="surface p-4">
