@@ -273,19 +273,28 @@ function clusterKey(title: string): string {
   return uniq.slice(0, 4).sort().join("-") || title.slice(0, 24);
 }
 
-// ---- Ukrainian translation (direct Google Gemini) ----------------------
-const TR_SYSTEM = `Ти перекладач крипто-новин для української аудиторії.
+// ---- Ukrainian translation (batched Google Gemini) ----------------------
+const TR_SYSTEM = `Ти перекладаєш крипто-новини для української аудиторії.
 Перекладай простою, природною українською без жаргону.
-Власні назви (Bitcoin, Ethereum, SEC, ETF) залишай як є.
-Поверни СТРОГО JSON: {"title":"<укр>","summary":"<укр, 1-2 речення або порожньо>"}.
-Жодних коментарів навколо.`;
+Власні назви (Bitcoin, Ethereum, SEC, ETF, Coinbase) залишай як є.
+На вхід — JSON-масив обʼєктів {id, title, summary}.
+Поверни СТРОГО JSON-масив {id, title_uk, summary_uk} у тому ж порядку.
+Жодних коментарів, тексту навколо, лише валідний JSON.`;
 
 const TR_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-async function translateOne(title: string, summary: string | null): Promise<{ title: string; summary: string } | null> {
+type TrIn = { id: string; title: string; summary: string | null };
+type TrOut = { id: string; title_uk: string; summary_uk: string };
+
+async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) return null;
-  const userMsg = `TITLE: ${title}\nSUMMARY: ${(summary ?? "").slice(0, 600)}`;
+  if (!apiKey || items.length === 0) return null;
+  const payload = items.map((it) => ({
+    id: it.id,
+    title: it.title,
+    summary: (it.summary ?? "").slice(0, 400),
+  }));
+  const userMsg = JSON.stringify(payload);
   for (const model of TR_MODELS) {
     try {
       const r = await fetch(
@@ -298,19 +307,26 @@ async function translateOne(title: string, summary: string | null): Promise<{ ti
             contents: [{ role: "user", parts: [{ text: userMsg }] }],
             generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.timeout(30_000),
         },
       );
       if (!r.ok) {
         if (r.status === 429 || r.status >= 500) continue;
+        console.warn(`[translate] ${model} ${r.status}`);
         return null;
       }
       const j = await r.json();
-      const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "{}";
+      const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "[]";
       const parsed = JSON.parse(raw);
-      if (typeof parsed?.title !== "string") return null;
-      return { title: parsed.title.trim(), summary: String(parsed.summary ?? "").trim() };
-    } catch {
+      if (!Array.isArray(parsed)) return null;
+      return parsed
+        .filter((x: unknown): x is TrOut => {
+          const o = x as { id?: unknown; title_uk?: unknown };
+          return typeof o?.id === "string" && typeof o?.title_uk === "string";
+        })
+        .map((o) => ({ id: o.id, title_uk: String(o.title_uk).trim(), summary_uk: String(o.summary_uk ?? "").trim() }));
+    } catch (e) {
+      console.warn(`[translate] ${model} threw`, (e as Error)?.message);
       continue;
     }
   }
@@ -324,26 +340,33 @@ async function translateRecent(supabase: any): Promise<number> {
     .select("id,title,summary")
     .is("title_uk", null)
     .order("published_at", { ascending: false })
-    .limit(250);
+    .limit(300);
   if (error || !data?.length) return 0;
-  const rows = data as { id: string; title: string; summary: string | null }[];
+  const rows = data as TrIn[];
   let done = 0;
-  // Process in parallel batches of 6 so EVERY article ends up translated,
-  // not just the freshest 30. Gateway tolerates this rate fine.
-  const BATCH = 6;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
-    const results = await Promise.allSettled(
-      batch.map(async (row) => {
-        const tr = await translateOne(row.title, row.summary);
-        if (!tr) return false;
-        await supabase.from("news_cache")
-          .update({ title_uk: tr.title, summary_uk: tr.summary || row.summary })
-          .eq("id", row.id);
-        return true;
-      }),
-    );
-    for (const r of results) if (r.status === "fulfilled" && r.value) done++;
+  const BATCH = 15;
+  const CONCURRENCY = 3;
+  const chunks: TrIn[][] = [];
+  for (let i = 0; i < rows.length; i += BATCH) chunks.push(rows.slice(i, i + BATCH));
+
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const group = chunks.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(group.map((c) => translateBatch(c)));
+    // deno-lint-ignore no-explicit-any
+    const updates: Promise<any>[] = [];
+    for (const arr of results) {
+      if (!arr) continue;
+      for (const tr of arr) {
+        if (!tr.title_uk) continue;
+        updates.push(
+          supabase.from("news_cache")
+            .update({ title_uk: tr.title_uk, summary_uk: tr.summary_uk || null })
+            .eq("id", tr.id),
+        );
+        done++;
+      }
+    }
+    await Promise.allSettled(updates);
   }
   return done;
 }
