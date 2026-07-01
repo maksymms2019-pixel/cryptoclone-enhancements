@@ -8,7 +8,7 @@ import { SeoHead } from "@/components/SeoHead";
 import { fmtUsd, fmtPct, toneFromPct } from "@/lib/format";
 import { Sparkline } from "@/components/Sparkline";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, Bell, Plus, Map, Sparkles, Send } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Plus, Map, Sparkles, Send } from "lucide-react";
 import { isInTelegram } from "@/lib/telegram";
 import { useAuth } from "@/lib/auth";
 import { FearGreedGauge } from "@/components/FearGreedGauge";

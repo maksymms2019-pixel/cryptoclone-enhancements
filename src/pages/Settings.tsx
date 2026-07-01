@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { BrandLogo, BrandWordmark } from "@/components/BrandLogo";
 import { SeoHead } from "@/components/SeoHead";
-import { LogOut, Send, Palette, Globe, Trash2, Download, Loader2, Map, Calculator, Bell } from "lucide-react";
+import { LogOut, Send, Palette, Globe, Trash2, Download, Loader2, Map, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
 import { useState } from "react";
