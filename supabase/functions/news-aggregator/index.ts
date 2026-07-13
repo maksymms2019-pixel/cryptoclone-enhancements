@@ -286,6 +286,18 @@ const TR_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 type TrIn = { id: string; title: string; summary: string | null };
 type TrOut = { id: string; title_uk: string; summary_uk: string };
 
+function parseTranslationJson(raw: string): unknown {
+  const clean = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const start = clean.indexOf("[");
+    const end = clean.lastIndexOf("]");
+    if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1));
+    throw new Error("translation JSON parse failed");
+  }
+}
+
 async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey || items.length === 0) return null;
@@ -305,7 +317,7 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: TR_SYSTEM }] },
             contents: [{ role: "user", parts: [{ text: userMsg }] }],
-            generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.2, response_mime_type: "application/json" },
           }),
           signal: AbortSignal.timeout(30_000),
         },
@@ -317,7 +329,7 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
       }
       const j = await r.json();
       const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "[]";
-      const parsed = JSON.parse(raw);
+      const parsed = parseTranslationJson(raw);
       if (!Array.isArray(parsed)) return null;
       return parsed
         .filter((x: unknown): x is TrOut => {
@@ -331,6 +343,37 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
     }
   }
   return null;
+}
+
+// deno-lint-ignore no-explicit-any
+async function translateSelected(supabase: any, ids: string[]): Promise<number> {
+  const cleanIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean))).slice(0, 30);
+  if (cleanIds.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from("news_cache")
+    .select("id,title,summary")
+    .in("id", cleanIds);
+  if (error || !data?.length) return 0;
+
+  const rows = data as TrIn[];
+  const BATCH = 10;
+  let done = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const translated = await translateBatch(rows.slice(i, i + BATCH));
+    if (!translated?.length) continue;
+    const updates = translated
+      .filter((tr) => tr.title_uk?.trim())
+      .map((tr) =>
+        supabase
+          .from("news_cache")
+          .update({ title_uk: tr.title_uk.trim(), summary_uk: tr.summary_uk?.trim() || null })
+          .eq("id", tr.id),
+      );
+    const results = await Promise.allSettled(updates);
+    done += results.filter((r) => r.status === "fulfilled").length;
+  }
+  return done;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -375,10 +418,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    let body: { translate_ids?: unknown } = {};
+    try { body = await req.json(); } catch { body = {}; }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    if (Array.isArray(body.translate_ids)) {
+      const translated = await translateSelected(supabase, body.translate_ids.map(String));
+      return new Response(JSON.stringify({ ok: true, translated }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     type Row = {
       url: string; title: string; source: string;
