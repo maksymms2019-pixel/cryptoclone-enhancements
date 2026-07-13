@@ -56,7 +56,8 @@ export default function News() {
 
   const clusters = useMemo<NewsCluster[]>(() => clusterAndRank(filtered), [filtered]);
   const heroCluster = clusters[0];
-  const restClusters = clusters.slice(1);
+  const showHero = Boolean(heroCluster?.lead.image_url && isValidHttpUrl(heroCluster.lead.url));
+  const restClusters = showHero ? clusters.slice(1) : clusters;
   const visibleUntranslated = useMemo(() => {
     const ids: string[] = [];
     for (const cl of clusters) {
@@ -172,7 +173,7 @@ export default function News() {
       />
 
       {/* Hero story */}
-      {heroCluster && heroCluster.lead.image_url && isValidHttpUrl(heroCluster.lead.url) && (
+      {showHero && heroCluster && (
         <div className="surface overflow-hidden">
           <button
             onClick={() => openNews(heroCluster.lead)}
