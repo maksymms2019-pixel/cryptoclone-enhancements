@@ -37,7 +37,6 @@ const dict = {
     "common.see_all":   "Усі →",
     "common.heatmap":   "Heatmap",
     "common.calc":      "Калькулятор",
-    "common.alerts":    "Алерти",
     "common.settings":  "Налаштування",
     // dashboard
     "dash.hello":       "Привіт 👋",
@@ -127,7 +126,6 @@ const dict = {
     "common.see_all":   "View all →",
     "common.heatmap":   "Heatmap",
     "common.calc":      "Calculator",
-    "common.alerts":    "Alerts",
     "common.settings":  "Settings",
     "dash.hello":       "Hi 👋",
     "dash.subtitle":    "A worthy crypto overview",

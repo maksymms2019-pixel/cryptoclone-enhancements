@@ -15,7 +15,6 @@ import { FearGreedGauge } from "@/components/FearGreedGauge";
 import { GainersLosers } from "@/components/GainersLosers";
 import { TrendingRail } from "@/components/TrendingRail";
 import { MarketMetrics } from "@/components/MarketMetrics";
-import { MarketSnapshotCard } from "@/components/MarketSnapshotCard";
 import { fetchMarketMetrics } from "@/lib/metrics";
 
 export default function Dashboard() {
@@ -40,7 +39,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      <SeoHead title="CryptoTime · Крипто-огляд" description="Реал-тайм ціни, портфоліо, алерти, новини крипто українською." />
+      <SeoHead title="CryptoTime · Крипто-огляд" description="Реал-тайм ціни, портфоліо та новини крипто українською." />
 
       <PriceTicker />
 
@@ -185,9 +184,6 @@ export default function Dashboard() {
 
       {/* MARKET METRICS */}
       <MarketMetrics />
-
-      {/* MORNING SNAPSHOT */}
-      <MarketSnapshotCard />
 
       {/* AI ANALYST */}
       <Link to="/assistant" className="surface block p-4">
