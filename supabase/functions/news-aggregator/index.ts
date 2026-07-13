@@ -281,7 +281,7 @@ const TR_SYSTEM = `Ти перекладаєш крипто-новини для 
 Поверни СТРОГО JSON-масив {id, title_uk, summary_uk} у тому ж порядку.
 Жодних коментарів, тексту навколо, лише валідний JSON.`;
 
-const TR_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const TR_MODELS = ["gemini-2.5-flash"];
 
 type TrIn = { id: string; title: string; summary: string | null };
 type TrOut = { id: string; title_uk: string; summary_uk: string };
