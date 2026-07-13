@@ -24,7 +24,7 @@ const SYSTEM = `Ти перекладач для української крип
 Власні назви (Bitcoin, Ethereum, Coinbase) залишай як є.
 Жодних пояснень, тільки переклад.`;
 
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const GEMINI_MODELS = ["gemini-2.5-flash"];
 
 async function callGemini(text: string): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");

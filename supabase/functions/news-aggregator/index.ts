@@ -329,14 +329,23 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
       }
       const j = await r.json();
       const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "[]";
+      if (!raw.trim()) {
+        console.warn(`[translate] ${model} empty response`, JSON.stringify(j).slice(0, 500));
+        return null;
+      }
       const parsed = parseTranslationJson(raw);
-      if (!Array.isArray(parsed)) return null;
-      return parsed
+      if (!Array.isArray(parsed)) {
+        console.warn(`[translate] ${model} non-array response`, raw.slice(0, 500));
+        return null;
+      }
+      const normalized = parsed
         .filter((x: unknown): x is TrOut => {
           const o = x as { id?: unknown; title_uk?: unknown };
           return typeof o?.id === "string" && typeof o?.title_uk === "string";
         })
         .map((o) => ({ id: o.id, title_uk: String(o.title_uk).trim(), summary_uk: String(o.summary_uk ?? "").trim() }));
+      if (!normalized.length) console.warn(`[translate] ${model} no valid rows`, raw.slice(0, 500));
+      return normalized;
     } catch (e) {
       console.warn(`[translate] ${model} threw`, (e as Error)?.message);
       continue;
@@ -354,14 +363,24 @@ async function translateSelected(supabase: any, ids: string[]): Promise<number> 
     .from("news_cache")
     .select("id,title,summary")
     .in("id", cleanIds);
-  if (error || !data?.length) return 0;
+  if (error) {
+    console.warn("[translateSelected] fetch failed", error.message);
+    return 0;
+  }
+  if (!data?.length) {
+    console.warn("[translateSelected] no rows", cleanIds);
+    return 0;
+  }
 
   const rows = data as TrIn[];
   const BATCH = 3;
   let done = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const translated = await translateBatch(rows.slice(i, i + BATCH));
-    if (!translated?.length) continue;
+    if (!translated?.length) {
+      console.warn("[translateSelected] batch produced no rows", rows.slice(i, i + BATCH).map((r) => r.id));
+      continue;
+    }
     const updates = translated
       .filter((tr) => tr.title_uk?.trim())
       .map((tr) =>
@@ -371,6 +390,9 @@ async function translateSelected(supabase: any, ids: string[]): Promise<number> 
           .eq("id", tr.id),
       );
     const results = await Promise.allSettled(updates);
+    for (const result of results) {
+      if (result.status === "rejected") console.warn("[translateSelected] update failed", String(result.reason));
+    }
     done += results.filter((r) => r.status === "fulfilled").length;
     if (i + BATCH < rows.length) await new Promise((resolve) => setTimeout(resolve, 650));
   }
