@@ -2,13 +2,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
-import { BrandLogo, BrandWordmark } from "@/components/BrandLogo";
+import { BrandWordmark } from "@/components/BrandLogo";
 import { SeoHead } from "@/components/SeoHead";
-import { LogOut, Send, Palette, Globe, Trash2, Download, Loader2, Map, Calculator } from "lucide-react";
+import { LogOut, Send, Palette, Globe, Trash2, Loader2, Map, Calculator, Camera, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
-import { useState } from "react";
-import { getTg } from "@/lib/telegram";
+import { useEffect, useMemo, useState } from "react";
+import { getTg, isInTelegram } from "@/lib/telegram";
 import { useAccent, type AccentName } from "@/lib/useAccent";
 import { useT, setLang, type Lang } from "@/lib/i18n";
 
@@ -35,6 +35,8 @@ export default function Settings() {
   const { t, lang } = useT();
   const { accent, setAccent } = useAccent();
   const [savingName, setSavingName] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
 
   const profile = useQuery({
     queryKey: ["profile", user?.id],
@@ -54,20 +56,6 @@ export default function Settings() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["profile"] }); toast.success(t("settings.saved")); },
     onError: (e: Error) => toast.error(e.message),
   });
-
-  async function exportData() {
-    const [trades, watchlist] = await Promise.all([
-      supabase.from("trades").select("*"),
-      supabase.from("watchlist").select("*"),
-    ]);
-    const payload = { exported_at: new Date().toISOString(), trades: trades.data, watchlist: watchlist.data };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `cryptotime-export-${Date.now()}.json`; a.click();
-    URL.revokeObjectURL(url);
-    toast.success(t("settings.exported"));
-  }
 
   async function deleteAccount() {
     if (!confirm(lang === "uk"
@@ -91,6 +79,70 @@ export default function Settings() {
   }
 
   const tgUser = getTg()?.initDataUnsafe?.user;
+  const inTelegram = isInTelegram();
+  const fallbackName = useMemo(() => {
+    if (inTelegram && tgUser) return tgUser.username ? `@${tgUser.username}` : tgUser.first_name ?? "";
+    return user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "";
+  }, [inTelegram, tgUser, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function resolveAvatar() {
+      const value = profile.data?.avatar_url?.trim();
+      if (value) {
+        if (/^https?:\/\//i.test(value) || value.startsWith("blob:")) {
+          if (!cancelled) setAvatarSrc(value);
+          return;
+        }
+        const { data } = await supabase.storage.from("avatars").createSignedUrl(value, 60 * 60);
+        if (!cancelled) setAvatarSrc(data?.signedUrl ?? null);
+        return;
+      }
+      if (inTelegram && tgUser?.photo_url) {
+        if (!cancelled) setAvatarSrc(tgUser.photo_url);
+        return;
+      }
+      if (!cancelled) setAvatarSrc(null);
+    }
+    void resolveAvatar();
+    return () => { cancelled = true; };
+  }, [profile.data?.avatar_url, inTelegram, tgUser?.photo_url]);
+
+  async function uploadAvatar(file: File) {
+    if (!user) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error(lang === "uk" ? "Обери зображення" : "Choose an image");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error(lang === "uk" ? "Зображення має бути до 4 МБ" : "Image must be under 4 MB");
+      return;
+    }
+    setUploadingAvatar(true);
+    const previous = profile.data?.avatar_url?.trim();
+    const preview = URL.createObjectURL(file);
+    setAvatarSrc(preview);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+      if (uploadError) throw uploadError;
+      await updateProfile.mutateAsync({ avatar_url: path });
+      if (previous && !/^https?:\/\//i.test(previous)) {
+        void supabase.storage.from("avatars").remove([previous]);
+      }
+      toast.success(lang === "uk" ? "Аватарку оновлено" : "Avatar updated");
+    } catch (e) {
+      toast.error((e as Error)?.message ?? (lang === "uk" ? "Не вдалось завантажити" : "Upload failed"));
+    } finally {
+      URL.revokeObjectURL(preview);
+      setUploadingAvatar(false);
+    }
+  }
 
   if (!user) {
     return (
@@ -116,14 +168,35 @@ export default function Settings() {
       {/* PROFILE */}
       <section className="surface p-4">
         <div className="flex items-center gap-3">
-          {profile.data?.avatar_url || tgUser?.photo_url ? (
-            <img src={profile.data?.avatar_url ?? tgUser?.photo_url ?? ""} alt="" className="h-12 w-12 rounded-full object-cover" />
-          ) : (
-            <BrandLogo size={48} />
-          )}
+          <label className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--line)] bg-[var(--bg)] text-[var(--text-muted)]">
+            {avatarSrc ? (
+              <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <UserRound size={20} />
+            )}
+            {!inTelegram && (
+              <>
+                <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity hover:opacity-100">
+                  {uploadingAvatar ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingAvatar}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void uploadAvatar(file);
+                  }}
+                  className="sr-only"
+                />
+              </>
+            )}
+          </label>
           <div className="flex-1 min-w-0">
             <input
-              defaultValue={profile.data?.display_name ?? ""}
+              key={`${profile.data?.id ?? "profile"}-${profile.data?.display_name ?? fallbackName}`}
+              defaultValue={profile.data?.display_name ?? fallbackName}
               placeholder={lang === "uk" ? "Імʼя" : "Name"}
               onBlur={async (e) => {
                 const v = e.target.value.trim();
@@ -137,7 +210,7 @@ export default function Settings() {
             />
             <div className="text-xs text-[var(--text-muted)] truncate">{user.email}</div>
           </div>
-          {savingName && <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
+          {(savingName || uploadingAvatar) && <Loader2 size={14} className="animate-spin text-[var(--text-muted)]" />}
         </div>
       </section>
 
@@ -222,10 +295,6 @@ export default function Settings() {
 
       {/* ACTIONS */}
       <section className="surface divide-y divide-[var(--line)]">
-        <button onClick={exportData} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[.02]">
-          <Download size={16} className="text-[var(--text-muted)]" />
-          <span className="flex-1 text-sm">{t("settings.export")}</span>
-        </button>
         <button onClick={async () => { await signOut(); nav("/auth", { replace: true }); }} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[.02]">
           <LogOut size={16} className="text-[var(--text-muted)]" />
           <span className="flex-1 text-sm">{t("common.sign_out")}</span>
