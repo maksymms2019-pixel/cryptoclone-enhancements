@@ -298,6 +298,30 @@ function parseTranslationJson(raw: string): unknown {
   }
 }
 
+function normalizeTranslationResponse(parsed: unknown): TrOut[] {
+  const maybeObj = parsed as { items?: unknown; translations?: unknown; data?: unknown };
+  const arr = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(maybeObj?.items)
+      ? maybeObj.items
+      : Array.isArray(maybeObj?.translations)
+        ? maybeObj.translations
+        : Array.isArray(maybeObj?.data)
+          ? maybeObj.data
+          : [];
+  return arr
+    .map((x: unknown) => {
+      const o = x as { id?: unknown; title_uk?: unknown; titleUk?: unknown; title?: unknown; summary_uk?: unknown; summaryUk?: unknown; summary?: unknown };
+      const title = o.title_uk ?? o.titleUk ?? o.title;
+      return {
+        id: String(o.id ?? ""),
+        title_uk: typeof title === "string" ? title.trim() : "",
+        summary_uk: String(o.summary_uk ?? o.summaryUk ?? o.summary ?? "").trim(),
+      };
+    })
+    .filter((o) => o.id && o.title_uk);
+}
+
 async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey || items.length === 0) return null;
@@ -334,16 +358,7 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
         return null;
       }
       const parsed = parseTranslationJson(raw);
-      if (!Array.isArray(parsed)) {
-        console.warn(`[translate] ${model} non-array response`, raw.slice(0, 500));
-        return null;
-      }
-      const normalized = parsed
-        .filter((x: unknown): x is TrOut => {
-          const o = x as { id?: unknown; title_uk?: unknown };
-          return typeof o?.id === "string" && typeof o?.title_uk === "string";
-        })
-        .map((o) => ({ id: o.id, title_uk: String(o.title_uk).trim(), summary_uk: String(o.summary_uk ?? "").trim() }));
+      const normalized = normalizeTranslationResponse(parsed);
       if (!normalized.length) console.warn(`[translate] ${model} no valid rows`, raw.slice(0, 500));
       return normalized;
     } catch (e) {
