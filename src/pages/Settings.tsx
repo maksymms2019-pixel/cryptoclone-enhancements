@@ -91,7 +91,7 @@ export default function Settings() {
       const value = profile.data?.avatar_url?.trim();
       if (value) {
         if (/^https?:\/\//i.test(value) || value.startsWith("blob:")) {
-          if (!cancelled) setAvatarSrc(value);
+          if (!cancelled) setAvatarSrc(inTelegram ? value : null);
           return;
         }
         const { data } = await supabase.storage.from("avatars").createSignedUrl(value, 60 * 60);
@@ -132,6 +132,8 @@ export default function Settings() {
       });
       if (uploadError) throw uploadError;
       await updateProfile.mutateAsync({ avatar_url: path });
+      const { data: signed } = await supabase.storage.from("avatars").createSignedUrl(path, 60 * 60);
+      setAvatarSrc(signed?.signedUrl ?? preview);
       if (previous && !/^https?:\/\//i.test(previous)) {
         void supabase.storage.from("avatars").remove([previous]);
       }
