@@ -99,7 +99,12 @@ export default function News() {
     setTranslating((cur) => new Set([...cur, ...unique]));
     try {
       const r = await translateNewsItems(unique);
-      toast.success(`Перекладено: ${r?.translated ?? unique.length}`);
+      const count = r?.translated ?? 0;
+      if (count > 0) {
+        toast.success(`Перекладено: ${count}`);
+      } else {
+        toast.error("Не вдалось перекласти зараз");
+      }
       await news.refetch();
     } catch (e) {
       toast.error("Не вдалось перекласти");

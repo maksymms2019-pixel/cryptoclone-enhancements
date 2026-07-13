@@ -357,7 +357,7 @@ async function translateSelected(supabase: any, ids: string[]): Promise<number> 
   if (error || !data?.length) return 0;
 
   const rows = data as TrIn[];
-  const BATCH = 10;
+  const BATCH = 3;
   let done = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const translated = await translateBatch(rows.slice(i, i + BATCH));
@@ -372,6 +372,7 @@ async function translateSelected(supabase: any, ids: string[]): Promise<number> 
       );
     const results = await Promise.allSettled(updates);
     done += results.filter((r) => r.status === "fulfilled").length;
+    if (i + BATCH < rows.length) await new Promise((resolve) => setTimeout(resolve, 650));
   }
   return done;
 }
@@ -387,8 +388,8 @@ async function translateRecent(supabase: any): Promise<number> {
   if (error || !data?.length) return 0;
   const rows = data as TrIn[];
   let done = 0;
-  const BATCH = 15;
-  const CONCURRENCY = 3;
+  const BATCH = 8;
+  const CONCURRENCY = 1;
   const chunks: TrIn[][] = [];
   for (let i = 0; i < rows.length; i += BATCH) chunks.push(rows.slice(i, i + BATCH));
 
