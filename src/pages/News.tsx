@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchNews, refreshNews, bumpClick, clusterAndRank, type NewsItem, type NewsCluster } from "@/lib/news";
+import { fetchNews, refreshNews, translateNewsItems, bumpClick, clusterAndRank, type NewsItem, type NewsCluster } from "@/lib/news";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { SeoHead } from "@/components/SeoHead";
-import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronUp, Languages, Loader2 } from "lucide-react";
 import { timeAgo } from "@/lib/format";
 import { toast } from "sonner";
 import { openExternal } from "@/lib/telegram";
@@ -36,6 +36,7 @@ export default function News() {
   const [filter, setFilter] = useState<Filter>("Головне");
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [translating, setTranslating] = useState<Set<string>>(new Set());
   const lastRefreshRef = useRef<number>(0);
 
   const news = useQuery({
@@ -55,7 +56,16 @@ export default function News() {
 
   const clusters = useMemo<NewsCluster[]>(() => clusterAndRank(filtered), [filtered]);
   const heroCluster = clusters[0];
-  const restClusters = clusters.slice(1);
+  const showHero = Boolean(heroCluster?.lead.image_url && isValidHttpUrl(heroCluster.lead.url));
+  const restClusters = showHero ? clusters.slice(1) : clusters;
+  const visibleUntranslated = useMemo(() => {
+    const ids: string[] = [];
+    for (const cl of clusters) {
+      if (!cl.lead.title_uk?.trim()) ids.push(cl.lead.id);
+      if (ids.length >= 20) break;
+    }
+    return ids;
+  }, [clusters]);
 
   // Show Ukrainian if backend provided it, otherwise fall back silently to original.
   function dispTitle(n: NewsItem): string {
@@ -63,6 +73,12 @@ export default function News() {
   }
   function dispSummary(n: NewsItem): string | null {
     return (n.summary_uk && n.summary_uk.trim()) || n.summary;
+  }
+  function needsTranslation(n: NewsItem): boolean {
+    return !n.title_uk?.trim();
+  }
+  function isTranslating(id: string): boolean {
+    return translating.has(id);
   }
 
   function openNews(item: NewsItem) {
@@ -75,6 +91,31 @@ export default function News() {
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
+  }
+
+  async function translate(ids: string[]) {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (unique.length === 0) return;
+    setTranslating((cur) => new Set([...cur, ...unique]));
+    try {
+      const r = await translateNewsItems(unique);
+      const count = r?.translated ?? 0;
+      if (count > 0) {
+        toast.success(`Перекладено: ${count}`);
+      } else {
+        toast.error("Не вдалось перекласти зараз");
+      }
+      await news.refetch();
+    } catch (e) {
+      toast.error("Не вдалось перекласти");
+      console.error(e);
+    } finally {
+      setTranslating((cur) => {
+        const next = new Set(cur);
+        unique.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
   }
 
   async function doRefresh() {
@@ -122,40 +163,61 @@ export default function News() {
         title="Новини"
         subtitle="Оновлюється кожні 2 хвилини"
         right={
-          <button onClick={doRefresh} disabled={refreshing} className="chip">
-            <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Оновити
-          </button>
+          <div className="flex items-center gap-2">
+            {visibleUntranslated.length > 0 && (
+              <button onClick={() => translate(visibleUntranslated)} disabled={translating.size > 0} className="chip" data-active="true">
+                {translating.size > 0 ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
+                Перекласти
+              </button>
+            )}
+            <button onClick={doRefresh} disabled={refreshing} className="chip">
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Оновити
+            </button>
+          </div>
         }
       />
 
       {/* Hero story */}
-      {heroCluster && heroCluster.lead.image_url && isValidHttpUrl(heroCluster.lead.url) && (
-        <button
-          onClick={() => openNews(heroCluster.lead)}
-          className="block w-full surface overflow-hidden text-left"
-        >
-          <div className="relative h-[200px] w-full bg-center bg-cover" style={{ backgroundImage: `url(${heroCluster.lead.image_url})` }}>
-            <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)]/40 to-transparent" />
-            {badgeFor(heroCluster.lead) && (
-              <div className={`absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur px-2.5 py-1 text-[10px] font-bold ${badgeFor(heroCluster.lead)!.tone}`}>
-                {badgeFor(heroCluster.lead)!.label}
-              </div>
-            )}
-          </div>
-          <div className="p-4">
-            <div className="text-[10px] uppercase tracking-wider text-[var(--gold)] font-semibold">{heroCluster.lead.source}</div>
-            <div className="mt-1.5 text-base font-bold leading-snug line-clamp-3">{dispTitle(heroCluster.lead)}</div>
-            <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-              <span>{timeAgo(heroCluster.lead.published_at)} тому</span>
-              {heroCluster.related.length > 0 && (
-                <>
-                  <span>·</span>
-                  <span className="text-[var(--cyan)]">+{heroCluster.related.length} інших джерел</span>
-                </>
+      {showHero && heroCluster && (
+        <div className="surface overflow-hidden">
+          <button
+            onClick={() => openNews(heroCluster.lead)}
+            className="block w-full text-left"
+          >
+            <div className="relative h-[200px] w-full bg-center bg-cover" style={{ backgroundImage: `url(${heroCluster.lead.image_url})` }}>
+              <div className="absolute inset-0 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)]/40 to-transparent" />
+              {badgeFor(heroCluster.lead) && (
+                <div className={`absolute top-3 left-3 rounded-full bg-black/60 backdrop-blur px-2.5 py-1 text-[10px] font-bold ${badgeFor(heroCluster.lead)!.tone}`}>
+                  {badgeFor(heroCluster.lead)!.label}
+                </div>
               )}
             </div>
-          </div>
-        </button>
+            <div className="p-4">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--gold)] font-semibold">{heroCluster.lead.source}</div>
+              <div className="mt-1.5 text-base font-bold leading-snug line-clamp-3">{dispTitle(heroCluster.lead)}</div>
+              <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                <span>{timeAgo(heroCluster.lead.published_at)} тому</span>
+                {needsTranslation(heroCluster.lead) && <span className="text-[var(--cyan)]">оригінал</span>}
+                {heroCluster.related.length > 0 && (
+                  <>
+                    <span>·</span>
+                    <span className="text-[var(--cyan)]">+{heroCluster.related.length} інших джерел</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </button>
+          {needsTranslation(heroCluster.lead) && (
+            <button
+              onClick={() => translate([heroCluster.lead.id])}
+              disabled={isTranslating(heroCluster.lead.id)}
+              className="flex w-full items-center justify-center gap-1.5 border-t border-[var(--line)] px-3 py-2 text-xs font-semibold text-[var(--gold)] hover:bg-white/[.02] disabled:opacity-60"
+            >
+              {isTranslating(heroCluster.lead.id) ? <Loader2 size={13} className="animate-spin" /> : <Languages size={13} />}
+              Перекласти українською
+            </button>
+          )}
+        </div>
       )}
 
       {/* Filter chips */}
@@ -234,6 +296,7 @@ export default function News() {
                         <span className="text-[var(--gold)] font-semibold">{n.source}</span>
                         <span>·</span>
                         <span>{timeAgo(n.published_at)} тому</span>
+                        {needsTranslation(n) && <span className="text-[var(--cyan)]">оригінал</span>}
                         {n.tags?.slice(0, 2).map((t) => (
                           <span key={t} className="rounded-full bg-white/5 px-1.5 py-0.5">{t}</span>
                         ))}
@@ -242,6 +305,16 @@ export default function News() {
                     <ExternalLink size={13} className="text-[var(--text-muted)] mt-0.5 shrink-0" />
                   </div>
                 </button>
+                {needsTranslation(n) && (
+                  <button
+                    onClick={() => translate([n.id])}
+                    disabled={isTranslating(n.id)}
+                    className="flex w-full items-center justify-center gap-1.5 border-t border-[var(--line)] px-3 py-1.5 text-[10px] font-semibold text-[var(--gold)] hover:bg-white/[.02] disabled:opacity-60"
+                  >
+                    {isTranslating(n.id) ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
+                    Перекласти українською
+                  </button>
+                )}
                 {cl.related.length > 0 && (
                   <>
                     <button

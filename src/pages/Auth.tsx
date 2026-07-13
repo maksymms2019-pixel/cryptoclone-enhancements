@@ -62,7 +62,7 @@ export default function Auth() {
     setBusy(true);
     try {
       const r = await signInGoogle();
-      if (r.error) { toast.error("Не вдалось увійти через Google"); return; }
+      if (r.error) { toast.error(translateAuthError(r.error.message || "Не вдалось увійти через Google")); return; }
       if (r.redirected) return;
       toast.success("З поверненням!");
       nav("/", { replace: true });
@@ -73,13 +73,13 @@ export default function Auth() {
 
   return (
     <div className="space-y-5">
-      <SeoHead title="Вхід / Реєстрація" description="Увійди в CryptoTime — слідкуй за крипто-ринком, веди портфоліо, отримуй алерти." />
+      <SeoHead title="Вхід / Реєстрація" description="Увійди в CryptoTime — слідкуй за крипто-ринком, веди портфоліо та читай новини." />
 
       <header className="flex flex-col items-center text-center pt-4">
         <BrandLogo size={64} />
         <div className="mt-3 display text-[28px] font-bold"><BrandWordmark /></div>
         <p className="mt-2 text-xs text-[var(--text-muted)] max-w-[280px]">
-          Крипто-огляд, портфоліо, алерти в Telegram. Все в одному місці.
+          Крипто-огляд, портфоліо й новини. Все в одному місці.
         </p>
       </header>
 

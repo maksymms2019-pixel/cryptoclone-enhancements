@@ -281,10 +281,73 @@ const TR_SYSTEM = `Ти перекладаєш крипто-новини для 
 Поверни СТРОГО JSON-масив {id, title_uk, summary_uk} у тому ж порядку.
 Жодних коментарів, тексту навколо, лише валідний JSON.`;
 
-const TR_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const TR_MODELS = ["gemini-2.5-flash"];
 
 type TrIn = { id: string; title: string; summary: string | null };
 type TrOut = { id: string; title_uk: string; summary_uk: string };
+
+function parseTranslationJson(raw: string): unknown {
+  const clean = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const start = clean.indexOf("[");
+    const end = clean.lastIndexOf("]");
+    if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1));
+    throw new Error("translation JSON parse failed");
+  }
+}
+
+function normalizeTranslationResponse(parsed: unknown): TrOut[] {
+  const maybeObj = parsed as { items?: unknown; translations?: unknown; data?: unknown };
+  const arr = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(maybeObj?.items)
+      ? maybeObj.items
+      : Array.isArray(maybeObj?.translations)
+        ? maybeObj.translations
+        : Array.isArray(maybeObj?.data)
+          ? maybeObj.data
+          : [];
+  return arr
+    .map((x: unknown) => {
+      const o = x as { id?: unknown; title_uk?: unknown; titleUk?: unknown; title?: unknown; summary_uk?: unknown; summaryUk?: unknown; summary?: unknown };
+      const title = o.title_uk ?? o.titleUk ?? o.title;
+      return {
+        id: String(o.id ?? ""),
+        title_uk: typeof title === "string" ? title.trim() : "",
+        summary_uk: String(o.summary_uk ?? o.summaryUk ?? o.summary ?? "").trim(),
+      };
+    })
+    .filter((o) => o.id && o.title_uk);
+}
+
+async function translateTextFallback(text: string): Promise<string> {
+  const clean = text.trim();
+  if (!clean) return "";
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(clean)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new Error(`fallback translate ${r.status}`);
+  const j = await r.json();
+  const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
+  return String(out || clean).trim();
+}
+
+async function translateBatchFallback(items: TrIn[]): Promise<TrOut[]> {
+  const out: TrOut[] = [];
+  for (const it of items) {
+    try {
+      const [title_uk, summary_uk] = await Promise.all([
+        translateTextFallback(it.title),
+        it.summary ? translateTextFallback(it.summary) : Promise.resolve(""),
+      ]);
+      if (title_uk) out.push({ id: it.id, title_uk, summary_uk });
+    } catch (e) {
+      console.warn("[translate fallback] failed", it.id, (e as Error)?.message);
+    }
+  }
+  return out;
+}
 
 async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
@@ -317,20 +380,65 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
       }
       const j = await r.json();
       const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "[]";
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return null;
-      return parsed
-        .filter((x: unknown): x is TrOut => {
-          const o = x as { id?: unknown; title_uk?: unknown };
-          return typeof o?.id === "string" && typeof o?.title_uk === "string";
-        })
-        .map((o) => ({ id: o.id, title_uk: String(o.title_uk).trim(), summary_uk: String(o.summary_uk ?? "").trim() }));
+      if (!raw.trim()) {
+        console.warn(`[translate] ${model} empty response`, JSON.stringify(j).slice(0, 500));
+        return null;
+      }
+      const parsed = parseTranslationJson(raw);
+      const normalized = normalizeTranslationResponse(parsed);
+      if (!normalized.length) console.warn(`[translate] ${model} no valid rows`, raw.slice(0, 500));
+      return normalized;
     } catch (e) {
       console.warn(`[translate] ${model} threw`, (e as Error)?.message);
       continue;
     }
   }
-  return null;
+  return translateBatchFallback(items);
+}
+
+// deno-lint-ignore no-explicit-any
+async function translateSelected(supabase: any, ids: string[]): Promise<number> {
+  const cleanIds = Array.from(new Set(ids.map((id) => String(id)).filter(Boolean))).slice(0, 30);
+  if (cleanIds.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from("news_cache")
+    .select("id,title,summary")
+    .in("id", cleanIds);
+  if (error) {
+    console.warn("[translateSelected] fetch failed", error.message);
+    return 0;
+  }
+  if (!data?.length) {
+    console.warn("[translateSelected] no rows", cleanIds);
+    return 0;
+  }
+
+  const rows = data as TrIn[];
+  const BATCH = 3;
+  let done = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const translated = await translateBatch(rows.slice(i, i + BATCH));
+    if (!translated?.length) {
+      console.warn("[translateSelected] batch produced no rows", rows.slice(i, i + BATCH).map((r) => r.id));
+      continue;
+    }
+    const updates = translated
+      .filter((tr) => tr.title_uk?.trim())
+      .map((tr) =>
+        supabase
+          .from("news_cache")
+          .update({ title_uk: tr.title_uk.trim(), summary_uk: tr.summary_uk?.trim() || null })
+          .eq("id", tr.id),
+      );
+    const results = await Promise.allSettled(updates);
+    for (const result of results) {
+      if (result.status === "rejected") console.warn("[translateSelected] update failed", String(result.reason));
+    }
+    done += results.filter((r) => r.status === "fulfilled").length;
+    if (i + BATCH < rows.length) await new Promise((resolve) => setTimeout(resolve, 650));
+  }
+  return done;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -344,8 +452,8 @@ async function translateRecent(supabase: any): Promise<number> {
   if (error || !data?.length) return 0;
   const rows = data as TrIn[];
   let done = 0;
-  const BATCH = 15;
-  const CONCURRENCY = 3;
+  const BATCH = 8;
+  const CONCURRENCY = 1;
   const chunks: TrIn[][] = [];
   for (let i = 0; i < rows.length; i += BATCH) chunks.push(rows.slice(i, i + BATCH));
 
@@ -375,10 +483,20 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    let body: { translate_ids?: unknown } = {};
+    try { body = await req.json(); } catch { body = {}; }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    if (Array.isArray(body.translate_ids)) {
+      const translated = await translateSelected(supabase, body.translate_ids.map(String));
+      return new Response(JSON.stringify({ ok: true, translated }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     type Row = {
       url: string; title: string; source: string;

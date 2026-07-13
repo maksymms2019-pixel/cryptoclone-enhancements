@@ -34,7 +34,7 @@ export function useAuth() {
 /**
  * Returns the internal app user id (public.tg_users.id) for the current session,
  * creating the row on first use. This id is what user-owned tables
- * (trades, watchlist, alerts) reference via foreign key.
+ * (trades, watchlist) reference via foreign key.
  */
 export async function getAppUserId(): Promise<string | null> {
   const { data, error } = await supabase.rpc("ensure_app_user");
