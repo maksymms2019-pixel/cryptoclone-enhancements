@@ -317,7 +317,7 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: TR_SYSTEM }] },
             contents: [{ role: "user", parts: [{ text: userMsg }] }],
-            generationConfig: { temperature: 0.2, response_mime_type: "application/json" },
+            generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
           }),
           signal: AbortSignal.timeout(30_000),
         },
