@@ -322,6 +322,33 @@ function normalizeTranslationResponse(parsed: unknown): TrOut[] {
     .filter((o) => o.id && o.title_uk);
 }
 
+async function translateTextFallback(text: string): Promise<string> {
+  const clean = text.trim();
+  if (!clean) return "";
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(clean)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new Error(`fallback translate ${r.status}`);
+  const j = await r.json();
+  const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
+  return String(out || clean).trim();
+}
+
+async function translateBatchFallback(items: TrIn[]): Promise<TrOut[]> {
+  const out: TrOut[] = [];
+  for (const it of items) {
+    try {
+      const [title_uk, summary_uk] = await Promise.all([
+        translateTextFallback(it.title),
+        it.summary ? translateTextFallback(it.summary) : Promise.resolve(""),
+      ]);
+      if (title_uk) out.push({ id: it.id, title_uk, summary_uk });
+    } catch (e) {
+      console.warn("[translate fallback] failed", it.id, (e as Error)?.message);
+    }
+  }
+  return out;
+}
+
 async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey || items.length === 0) return null;
@@ -366,7 +393,7 @@ async function translateBatch(items: TrIn[]): Promise<TrOut[] | null> {
       continue;
     }
   }
-  return null;
+  return translateBatchFallback(items);
 }
 
 // deno-lint-ignore no-explicit-any

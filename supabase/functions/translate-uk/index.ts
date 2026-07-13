@@ -26,6 +26,17 @@ const SYSTEM = `Ти перекладач для української крип
 
 const GEMINI_MODELS = ["gemini-2.5-flash"];
 
+async function translateTextFallback(text: string): Promise<string> {
+  const clean = text.trim();
+  if (!clean) return "";
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(clean)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!r.ok) throw new Error(`fallback translate ${r.status}`);
+  const j = await r.json();
+  const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
+  return String(out || clean).trim();
+}
+
 async function callGemini(text: string): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY missing");
@@ -58,7 +69,8 @@ async function callGemini(text: string): Promise<string> {
       lastErr = String((e as Error)?.message ?? e);
     }
   }
-  throw new Error(lastErr || "gemini failed");
+  console.warn("[translate-uk] Gemini failed, using fallback", lastErr);
+  return translateTextFallback(text);
 }
 
 Deno.serve(async (req) => {
