@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { useAuth, signInEmail, signUpEmail, signInGoogle } from "@/lib/auth";
+import { consumeAuthReturnPath, normalizeAuthReturnPath, signInEmail, signInGoogle, signUpEmail, useAuth } from "@/lib/auth";
 import { BrandLogo, BrandWordmark } from "@/components/BrandLogo";
 import { SeoHead } from "@/components/SeoHead";
 import { Mail, Lock, Loader2 } from "lucide-react";
@@ -16,9 +16,10 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const returnPath = normalizeAuthReturnPath((loc.state as { from?: string } | null)?.from);
 
   if (!authLoading && session) {
-    const to = (loc.state as { from?: string } | null)?.from ?? "/";
+    const to = consumeAuthReturnPath(returnPath);
     return <Navigate to={to} replace />;
   }
 
@@ -31,7 +32,7 @@ export default function Auth() {
         const { error } = await signInEmail(email, password);
         if (error) { toast.error(translateAuthError(error.message)); return; }
         toast.success("З поверненням!");
-        nav("/", { replace: true });
+        nav(consumeAuthReturnPath(returnPath), { replace: true });
       } else {
         const { data, error } = await signUpEmail(email, password, name || undefined);
         if (error) { toast.error(translateAuthError(error.message)); return; }
@@ -39,7 +40,7 @@ export default function Auth() {
         // Автопідтвердження увімкнено — сесія приходить одразу.
         if (data?.session) {
           toast.success("Реєстрація успішна! Вітаємо.");
-          nav("/", { replace: true });
+          nav(consumeAuthReturnPath(returnPath), { replace: true });
         } else {
           // Резерв: якщо сесія не прийшла, спробуємо одразу увійти.
           const { error: signErr } = await signInEmail(email, password);
@@ -48,7 +49,7 @@ export default function Auth() {
             setMode("signin");
           } else {
             toast.success("Реєстрація успішна! Вітаємо.");
-            nav("/", { replace: true });
+            nav(consumeAuthReturnPath(returnPath), { replace: true });
           }
         }
       }
@@ -61,11 +62,11 @@ export default function Auth() {
     if (busy) return;
     setBusy(true);
     try {
-      const r = await signInGoogle();
+      const r = await signInGoogle(returnPath);
       if (r.error) { toast.error(translateAuthError(r.error.message || "Не вдалось увійти через Google")); return; }
       if (r.redirected) return;
       toast.success("З поверненням!");
-      nav("/", { replace: true });
+      nav(consumeAuthReturnPath(returnPath), { replace: true });
     } finally {
       setBusy(false);
     }
