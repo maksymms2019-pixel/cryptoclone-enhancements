@@ -66,10 +66,40 @@ export async function sendReset(email: string) {
   });
 }
 
-export async function signInGoogle() {
+const AUTH_NEXT_KEY = "cryptotime-auth-next";
+
+export function normalizeAuthReturnPath(value?: string | null): string {
+  if (!value || typeof window === "undefined") return "/";
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin !== window.location.origin) return "/";
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    if (!path.startsWith("/") || path.startsWith("//") || path.startsWith("/~oauth")) return "/";
+    return path === "/auth" ? "/" : path;
+  } catch {
+    return "/";
+  }
+}
+
+export function rememberAuthReturnPath(value?: string | null) {
+  if (typeof window === "undefined") return;
+  const path = normalizeAuthReturnPath(value);
+  if (path === "/") window.sessionStorage.removeItem(AUTH_NEXT_KEY);
+  else window.sessionStorage.setItem(AUTH_NEXT_KEY, path);
+}
+
+export function consumeAuthReturnPath(fallback = "/") {
+  if (typeof window === "undefined") return fallback;
+  const stored = window.sessionStorage.getItem(AUTH_NEXT_KEY);
+  window.sessionStorage.removeItem(AUTH_NEXT_KEY);
+  return normalizeAuthReturnPath(stored || fallback);
+}
+
+export async function signInGoogle(returnTo?: string | null) {
+  rememberAuthReturnPath(returnTo);
   const { lovable } = await import("@/integrations/lovable");
   return lovable.auth.signInWithOAuth("google", {
-    redirect_uri: window.location.origin,
+    redirect_uri: `${window.location.origin}/auth`,
     extraParams: { prompt: "select_account" },
   });
 }
