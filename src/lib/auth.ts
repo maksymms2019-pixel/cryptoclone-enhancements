@@ -1,4 +1,4 @@
-// Auth helpers + React hook. Supports email/password, Google (Lovable managed),
+// Auth helpers + React hook. Supports email/password
 // and silent Telegram Mini-App sign-in via the `tg-auth` edge function.
 
 import { useEffect, useState, useCallback } from "react";
@@ -93,15 +93,6 @@ export function consumeAuthReturnPath(fallback = "/") {
   const stored = window.sessionStorage.getItem(AUTH_NEXT_KEY);
   window.sessionStorage.removeItem(AUTH_NEXT_KEY);
   return normalizeAuthReturnPath(stored || fallback);
-}
-
-export async function signInGoogle(returnTo?: string | null) {
-  rememberAuthReturnPath(returnTo);
-  const { lovable } = await import("@/integrations/lovable");
-  return lovable.auth.signInWithOAuth("google", {
-    redirect_uri: `${window.location.origin}/auth`,
-    extraParams: { prompt: "select_account" },
-  });
 }
 
 /**
