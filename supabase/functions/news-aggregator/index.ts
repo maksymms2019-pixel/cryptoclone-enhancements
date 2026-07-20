@@ -282,7 +282,7 @@ const TR_SYSTEM = `Ти професійний перекладач крипто
 
 // Keep several direct Gemini model names because user-owned Gemini projects can
 // expose different model generations. We try stable Flash variants first.
-const TR_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+const TR_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
 const TR_RESPONSE_SCHEMA = {
   type: "ARRAY",
   items: {
@@ -388,7 +388,7 @@ async function callGeminiBatch(items: TrIn[]): Promise<TrOut[]> {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
           body: JSON.stringify(geminiBody(items, withSchema)),
-          signal: AbortSignal.timeout(28_000),
+          signal: AbortSignal.timeout(9_000),
         });
         const bodyText = await r.text();
         if (!r.ok) {
@@ -460,8 +460,27 @@ async function translateChunkReliably(items: TrIn[], depth = 0): Promise<TrOut[]
   }
 }
 
-async function translateRows(rows: TrIn[], options: { batchSize: number; fallbackBudget: number }): Promise<TrOut[]> {
+async function translateRows(rows: TrIn[], options: { batchSize: number; fallbackBudget: number; preferFallback?: boolean }): Promise<TrOut[]> {
   const byId = new Map<string, TrOut>();
+
+  if (options.preferFallback) {
+    let fallbackLeft = options.fallbackBudget;
+    for (const row of rows) {
+      if (fallbackLeft <= 0) break;
+      const tr = await translateOneFallback(row);
+      if (tr) byId.set(tr.id, tr);
+      fallbackLeft--;
+      if (fallbackLeft > 0) await sleep(450);
+    }
+
+    const missing = rows.filter((row) => !byId.has(row.id));
+    if (missing.length) {
+      const translated = await translateChunkReliably(missing.slice(0, options.batchSize));
+      for (const tr of translated) byId.set(tr.id, tr);
+    }
+    return Array.from(byId.values());
+  }
+
   for (let i = 0; i < rows.length; i += options.batchSize) {
     const chunk = rows.slice(i, i + options.batchSize);
     const translated = await translateChunkReliably(chunk);
@@ -520,7 +539,7 @@ async function translateSelected(supabase: any, ids: string[]): Promise<TrStats>
   if (!rows.length) return { requested: cleanIds.length, found: fetched.length, already, translated: 0, failed: 0 };
 
   try {
-    const translated = await translateRows(rows, { batchSize: 4, fallbackBudget: Math.min(2, rows.length) });
+    const translated = await translateRows(rows, { batchSize: 4, fallbackBudget: rows.length, preferFallback: true });
     const saved = await persistTranslations(supabase, translated);
     return {
       requested: cleanIds.length,
