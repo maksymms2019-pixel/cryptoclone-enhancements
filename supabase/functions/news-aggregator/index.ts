@@ -424,12 +424,25 @@ async function callGeminiBatch(items: TrIn[]): Promise<TrOut[]> {
 async function translateTextFallback(text: string): Promise<string> {
   const clean = text.trim();
   if (!clean) return "";
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(clean)}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!r.ok) throw new Error(`fallback translate ${r.status}`);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uk&dt=t&q=${encodeURIComponent(clean)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(6_000) });
+    if (!r.ok) throw new Error(`google ${r.status}`);
+    const j = await r.json();
+    const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
+    const translated = String(out || "").trim();
+    if (translated) return translated;
+  } catch (e) {
+    console.warn("[translate fallback] google skipped", (e as Error)?.message);
+  }
+
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(clean)}&langpair=en|uk`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  if (!r.ok) throw new Error(`mymemory ${r.status}`);
   const j = await r.json();
-  const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
-  return String(out || clean).trim();
+  const out = String(j?.responseData?.translatedText ?? "").trim();
+  if (!out) throw new Error("mymemory empty");
+  return out;
 }
 
 async function translateOneFallback(item: TrIn): Promise<TrOut | null> {
@@ -499,7 +512,7 @@ async function callGeminiOne(item: TrIn): Promise<TrOut | null> {
     }
   }
   console.warn("[translate one] failed", item.id, lastErr);
-  return null;
+  return translateOneFallback(item);
 }
 
 async function translateRowsIndividually(rows: TrIn[], concurrency: number): Promise<TrOut[]> {
