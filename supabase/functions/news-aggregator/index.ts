@@ -436,7 +436,18 @@ async function translateTextFallback(text: string): Promise<string> {
     console.warn("[translate fallback] google skipped", (e as Error)?.message);
   }
 
-  throw new Error("fallback unavailable");
+  const url = `https://lingva.ml/api/v1/en/uk/${encodeURIComponent(clean)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  if (!r.ok) throw new Error(`lingva ${r.status}`);
+  const j = await r.json();
+  const out = String(j?.translation ?? "").trim();
+  if (!out) throw new Error("lingva empty");
+  const sourceWords = clean.split(/\s+/).filter(Boolean).length;
+  const outWords = out.split(/\s+/).filter(Boolean).length;
+  if (sourceWords >= 8 && outWords < Math.max(5, Math.floor(sourceWords * 0.65))) {
+    throw new Error("lingva truncated");
+  }
+  return out;
 }
 
 async function translateOneFallback(item: TrIn): Promise<TrOut | null> {
