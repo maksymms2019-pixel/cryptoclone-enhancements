@@ -620,6 +620,7 @@ async function translateSelected(supabase: any, ids: string[]): Promise<TrStats>
       already,
       translated: saved,
       failed: Math.max(0, rows.length - saved),
+      error: saved === 0 ? "translation_unavailable" : undefined,
     };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
@@ -643,7 +644,14 @@ async function translateRecent(supabase: any): Promise<TrStats> {
   try {
     const translated = await translateRows(rows, { batchSize: 4, fallbackBudget: 0 });
     const saved = await persistTranslations(supabase, translated);
-    return { requested: rows.length, found: rows.length, already: 0, translated: saved, failed: Math.max(0, rows.length - saved) };
+    return {
+      requested: rows.length,
+      found: rows.length,
+      already: 0,
+      translated: saved,
+      failed: Math.max(0, rows.length - saved),
+      error: saved === 0 ? "translation_unavailable" : undefined,
+    };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     console.warn("[translateRecent] failed", msg);
