@@ -37,6 +37,7 @@ export default function News() {
   const [refreshing, setRefreshing] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [translating, setTranslating] = useState<Set<string>>(new Set());
+  const [translationStatus, setTranslationStatus] = useState<string | null>(null);
   const lastRefreshRef = useRef<number>(0);
 
   const news = useQuery({
@@ -97,16 +98,27 @@ export default function News() {
     const unique = Array.from(new Set(ids)).filter(Boolean);
     if (unique.length === 0) return;
     setTranslating((cur) => new Set([...cur, ...unique]));
+    setTranslationStatus(`Перекладаємо ${unique.length} ${unique.length === 1 ? "новину" : "новин"}…`);
     try {
       const r = await translateNewsItems(unique);
       const count = r?.translated ?? 0;
+      const failed = r?.failed ?? 0;
+      const already = r?.already ?? 0;
       if (count > 0) {
-        toast.success(`Перекладено: ${count}`);
+        const msg = failed > 0 ? `Перекладено ${count} з ${count + failed}` : `Перекладено: ${count}`;
+        setTranslationStatus(msg);
+        if (failed > 0) toast.message(msg); else toast.success(msg);
+      } else if (already > 0 && failed === 0) {
+        setTranslationStatus("Усе вже перекладено");
+        toast.message("Усе вже перекладено");
       } else {
-        toast.error("Не вдалось перекласти зараз");
+        const msg = r?.error ? "Переклад тимчасово недоступний" : "Не вдалось перекласти зараз";
+        setTranslationStatus(msg);
+        toast.error(msg);
       }
       await news.refetch();
     } catch (e) {
+      setTranslationStatus("Помилка перекладу — можна повторити");
       toast.error("Не вдалось перекласти");
       console.error(e);
     } finally {
@@ -115,6 +127,7 @@ export default function News() {
         unique.forEach((id) => next.delete(id));
         return next;
       });
+      window.setTimeout(() => setTranslationStatus(null), 3500);
     }
   }
 
@@ -176,6 +189,12 @@ export default function News() {
           </div>
         }
       />
+      {translationStatus && (
+        <div className="surface flex items-center gap-2 px-3 py-2 text-xs text-[var(--text-muted)]">
+          {translating.size > 0 ? <Loader2 size={13} className="animate-spin text-[var(--gold)]" /> : <Languages size={13} className="text-[var(--gold)]" />}
+          <span>{translationStatus}</span>
+        </div>
+      )}
 
       {/* Hero story */}
       {showHero && heroCluster && (
@@ -312,7 +331,7 @@ export default function News() {
                     className="flex w-full items-center justify-center gap-1.5 border-t border-[var(--line)] px-3 py-1.5 text-[10px] font-semibold text-[var(--gold)] hover:bg-white/[.02] disabled:opacity-60"
                   >
                     {isTranslating(n.id) ? <Loader2 size={11} className="animate-spin" /> : <Languages size={11} />}
-                    Перекласти українською
+                    {isTranslating(n.id) ? "Перекладаємо…" : "Перекласти українською"}
                   </button>
                 )}
                 {cl.related.length > 0 && (
