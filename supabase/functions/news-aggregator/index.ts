@@ -447,12 +447,14 @@ async function translateTextFallback(text: string): Promise<string> {
 
 async function translateOneFallback(item: TrIn): Promise<TrOut | null> {
   try {
-    const combined = item.summary ? `${item.title}\n---SUMMARY---\n${item.summary}` : item.title;
-    const out = await translateTextFallback(combined);
-    const [titleRaw, summaryRaw = ""] = out.split(/\n---SUMMARY---\n|---SUMMARY---/);
-    const title_uk = titleRaw.trim();
+    const title_uk = (await translateTextFallback(item.title)).trim();
     if (!isUsableTranslation(item.title, title_uk)) return null;
-    return { id: item.id, title_uk, summary_uk: summaryRaw.trim() };
+    let summary_uk = "";
+    if (item.summary?.trim()) {
+      await sleep(250);
+      summary_uk = (await translateTextFallback(item.summary)).trim();
+    }
+    return { id: item.id, title_uk, summary_uk };
   } catch (e) {
     console.warn("[translate fallback] skipped", item.id, (e as Error)?.message);
     return null;
