@@ -436,18 +436,7 @@ async function translateTextFallback(text: string): Promise<string> {
     console.warn("[translate fallback] google skipped", (e as Error)?.message);
   }
 
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(clean)}&langpair=en|uk`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(8_000) });
-  if (!r.ok) throw new Error(`mymemory ${r.status}`);
-  const j = await r.json();
-  const out = String(j?.responseData?.translatedText ?? "").trim();
-  if (!out) throw new Error("mymemory empty");
-  const sourceWords = clean.split(/\s+/).filter(Boolean).length;
-  const outWords = out.split(/\s+/).filter(Boolean).length;
-  if (sourceWords >= 8 && outWords < Math.max(5, Math.floor(sourceWords * 0.55))) {
-    throw new Error("mymemory truncated");
-  }
-  return out;
+  throw new Error("fallback unavailable");
 }
 
 async function translateOneFallback(item: TrIn): Promise<TrOut | null> {
