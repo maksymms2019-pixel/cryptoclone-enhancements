@@ -442,6 +442,11 @@ async function translateTextFallback(text: string): Promise<string> {
   const j = await r.json();
   const out = String(j?.responseData?.translatedText ?? "").trim();
   if (!out) throw new Error("mymemory empty");
+  const sourceWords = clean.split(/\s+/).filter(Boolean).length;
+  const outWords = out.split(/\s+/).filter(Boolean).length;
+  if (sourceWords >= 8 && outWords < Math.max(5, Math.floor(sourceWords * 0.55))) {
+    throw new Error("mymemory truncated");
+  }
   return out;
 }
 
