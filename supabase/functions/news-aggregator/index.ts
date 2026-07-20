@@ -280,6 +280,13 @@ const TR_SYSTEM = `Ти професійний перекладач крипто
 Власні назви, тикери, бренди й абревіатури (Bitcoin, Ethereum, BTC, ETH, SEC, ETF, Coinbase) залишай латиницею.
 На вхід надходить JSON-масив {id,title,summary}. Поверни тільки JSON-масив {id,title_uk,summary_uk}.`;
 
+const TR_SINGLE_SYSTEM = `Ти професійний перекладач крипто-новин українською.
+Перекладай природно, коротко й зрозуміло. Не додавай пояснень.
+Власні назви, тикери, бренди й абревіатури залишай латиницею.
+Поверни тільки два поля у форматі:
+TITLE_UK: переклад заголовка
+SUMMARY_UK: переклад опису`;
+
 // Keep several direct Gemini model names because user-owned Gemini projects can
 // expose different model generations. We try stable Flash variants first.
 const TR_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
@@ -439,6 +446,75 @@ async function translateOneFallback(item: TrIn): Promise<TrOut | null> {
   }
 }
 
+function parseSingleTranslation(raw: string, item: TrIn): TrOut | null {
+  const clean = raw.trim().replace(/^```[a-z]*\s*/i, "").replace(/```$/i, "").trim();
+  const titleMatch = clean.match(/TITLE_UK\s*:\s*([\s\S]*?)(?:\n\s*SUMMARY_UK\s*:|$)/i);
+  const summaryMatch = clean.match(/SUMMARY_UK\s*:\s*([\s\S]*)$/i);
+  let title_uk = (titleMatch?.[1] ?? "").trim();
+  let summary_uk = (summaryMatch?.[1] ?? "").trim();
+
+  if (!title_uk) {
+    const lines = clean.split(/\n+/).map((line) => line.replace(/^[-*•\d.)\s]+/, "").trim()).filter(Boolean);
+    title_uk = lines[0] ?? "";
+    summary_uk = lines.slice(1).join(" ").trim();
+  }
+
+  title_uk = title_uk.replace(/^['"“”]+|['"“”]+$/g, "").trim();
+  summary_uk = summary_uk.replace(/^['"“”]+|['"“”]+$/g, "").trim();
+  if (!isUsableTranslation(item.title, title_uk)) return null;
+  return { id: item.id, title_uk, summary_uk };
+}
+
+async function callGeminiOne(item: TrIn): Promise<TrOut | null> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) throw new Error("GEMINI_API_KEY missing");
+  const prompt = `Заголовок:\n${item.title}\n\nОпис:\n${item.summary ?? ""}`;
+  let lastErr = "";
+
+  for (const model of TR_MODELS) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: TR_SINGLE_SYSTEM }] },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: 520 },
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+      const bodyText = await r.text();
+      if (!r.ok) {
+        lastErr = `${model} ${r.status}: ${bodyText.slice(0, 160)}`;
+        if (r.status === 429) await sleep(700);
+        continue;
+      }
+      const j = JSON.parse(bodyText);
+      const raw = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+      const parsed = parseSingleTranslation(raw, item);
+      if (parsed) return parsed;
+      lastErr = `${model} unusable single response`;
+    } catch (e) {
+      lastErr = String((e as Error)?.message ?? e);
+    }
+  }
+  console.warn("[translate one] failed", item.id, lastErr);
+  return null;
+}
+
+async function translateRowsIndividually(rows: TrIn[], concurrency: number): Promise<TrOut[]> {
+  const out: TrOut[] = [];
+  for (let i = 0; i < rows.length; i += concurrency) {
+    const group = rows.slice(i, i + concurrency);
+    const results = await Promise.allSettled(group.map((row) => callGeminiOne(row)));
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) out.push(result.value);
+    }
+    if (i + concurrency < rows.length) await sleep(700);
+  }
+  return out;
+}
+
 async function translateChunkReliably(items: TrIn[], depth = 0): Promise<TrOut[]> {
   if (!items.length) return [];
   try {
@@ -464,20 +540,8 @@ async function translateRows(rows: TrIn[], options: { batchSize: number; fallbac
   const byId = new Map<string, TrOut>();
 
   if (options.preferFallback) {
-    let fallbackLeft = options.fallbackBudget;
-    for (const row of rows) {
-      if (fallbackLeft <= 0) break;
-      const tr = await translateOneFallback(row);
-      if (tr) byId.set(tr.id, tr);
-      fallbackLeft--;
-      if (fallbackLeft > 0) await sleep(450);
-    }
-
-    const missing = rows.filter((row) => !byId.has(row.id));
-    if (missing.length) {
-      const translated = await translateChunkReliably(missing.slice(0, options.batchSize));
-      for (const tr of translated) byId.set(tr.id, tr);
-    }
+    const translated = await translateRowsIndividually(rows, options.batchSize);
+    for (const tr of translated) byId.set(tr.id, tr);
     return Array.from(byId.values());
   }
 
