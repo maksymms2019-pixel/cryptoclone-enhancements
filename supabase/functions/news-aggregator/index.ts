@@ -322,6 +322,12 @@ function isUsableTranslation(original: string, translated: string): boolean {
   return cyrillicCount(out) >= 3 && out.toLowerCase() !== original.trim().toLowerCase();
 }
 
+function looksCompleteTranslation(original: string, translated: string): boolean {
+  const sourceWords = original.trim().split(/\s+/).filter(Boolean).length;
+  const outWords = translated.trim().split(/\s+/).filter(Boolean).length;
+  return sourceWords < 8 || outWords >= Math.max(5, Math.floor(sourceWords * 0.65));
+}
+
 function parseTranslationJson(raw: string): unknown {
   const clean = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
   try {
@@ -431,7 +437,8 @@ async function translateTextFallback(text: string): Promise<string> {
     const j = await r.json();
     const out = Array.isArray(j?.[0]) ? j[0].map((part: unknown[]) => part?.[0] ?? "").join("") : "";
     const translated = String(out || "").trim();
-    if (translated) return translated;
+    if (translated && looksCompleteTranslation(clean, translated)) return translated;
+    if (translated) throw new Error("google truncated");
   } catch (e) {
     console.warn("[translate fallback] google skipped", (e as Error)?.message);
   }
@@ -442,11 +449,7 @@ async function translateTextFallback(text: string): Promise<string> {
   const j = await r.json();
   const out = String(j?.translation ?? "").trim();
   if (!out) throw new Error("lingva empty");
-  const sourceWords = clean.split(/\s+/).filter(Boolean).length;
-  const outWords = out.split(/\s+/).filter(Boolean).length;
-  if (sourceWords >= 8 && outWords < Math.max(5, Math.floor(sourceWords * 0.65))) {
-    throw new Error("lingva truncated");
-  }
+  if (!looksCompleteTranslation(clean, out)) throw new Error("lingva truncated");
   return out;
 }
 
