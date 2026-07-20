@@ -572,8 +572,8 @@ Deno.serve(async (req) => {
     );
 
     if (Array.isArray(body.translate_ids)) {
-      const translated = await translateSelected(supabase, body.translate_ids.map(String));
-      return new Response(JSON.stringify({ ok: true, translated }), {
+      const stats = await translateSelected(supabase, body.translate_ids.map(String));
+      return new Response(JSON.stringify({ ok: true, ...stats }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -642,14 +642,14 @@ Deno.serve(async (req) => {
 
     // Translate the freshest, most important pieces to Ukrainian so the
     // News page reads natively for non-English speakers.
-    let translated = 0;
+    let translationStats: TrStats = { requested: 0, found: 0, already: 0, translated: 0, failed: 0 };
     try {
-      translated = await translateRecent(supabase);
+      translationStats = await translateRecent(supabase);
     } catch (e) {
       console.warn("[news-aggregator] translate step failed:", (e as Error)?.message);
     }
 
-    return new Response(JSON.stringify({ ok: true, inserted: unique.length, sources: SOURCES.length, translated, failed }), {
+    return new Response(JSON.stringify({ ok: true, inserted: unique.length, sources: SOURCES.length, translated: translationStats.translated, translation: translationStats, failed }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
