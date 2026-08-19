@@ -9,6 +9,7 @@ import { SeoHead } from "@/components/SeoHead";
 import { CryptoBubbles } from "@/components/CryptoBubbles";
 import { Link } from "react-router-dom";
 import { fmtPct, fmtUsd } from "@/lib/format";
+import { iconUrl } from "@/lib/icons";
 
 type Range = "1h" | "24h" | "7d" | "30d";
 type Sector = { id: string; label: string; cgCategory?: string };
@@ -197,7 +198,7 @@ export default function Heatmap() {
     if (!node) return;
     setSavingPng(true);
     try {
-      const urls = Array.from(new Set(exportCells.map((c) => c.image).filter(Boolean)));
+      const urls = Array.from(new Set(exportCells.map((c) => iconUrl(c.image)).filter(Boolean)));
       const pairs = await Promise.all(urls.map(async (u) => [u, await fetchAsDataUrl(u)] as const));
       const map: Record<string, string> = {};
       for (const [u, d] of pairs) if (d) map[u] = d;
@@ -263,7 +264,7 @@ export default function Heatmap() {
           fill={colorFor(c.pct, legendMax)} stroke="rgba(6,20,28,.9)" strokeWidth="1" rx="2"
         />
         {(showAll || top10SmallIcon) && c.image && (
-          <image href={imgOverride?.[c.image] ?? c.image} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
+          <image href={imgOverride?.[iconUrl(c.image)] ?? iconUrl(c.image)} x={cx - effIcon / 2} y={topY} width={effIcon} height={effIcon}
             crossOrigin="anonymous" style={{ pointerEvents: "none" }} preserveAspectRatio="xMidYMid meet" />
         )}
         {(showAll || showSymPrice || showSym || top10SmallIcon) && (
@@ -453,7 +454,7 @@ export default function Heatmap() {
                 const p = pctFor(c, timeRange);
                 return (
                   <Link key={c.id} to={`/coin/${c.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[.02]">
-                    <img src={c.image} alt="" className="h-7 w-7 rounded-full" />
+                    <img src={iconUrl(c.image)} alt="" className="h-7 w-7 rounded-full" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium">{c.symbol.toUpperCase()}</div>
                       <div className="text-[11px] text-[var(--text-muted)] tabular-nums">{fmtUsd(c.current_price)}</div>

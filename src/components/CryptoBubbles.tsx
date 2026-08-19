@@ -84,7 +84,7 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
       const fallbacks = [
         c.image,
         `https://assets.coincap.io/assets/icons/${sym}@2x.png`,
-      ].filter(Boolean) as string[];
+      ].filter(Boolean).map((u) => iconUrl(u as string));
       let idx = 0;
       img.onerror = () => {
         idx++;
@@ -286,8 +286,6 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
       ctx.font = "600 16px Inter, sans-serif";
       ctx.textBaseline = "middle";
       ctx.fillText(`▲ ${upCount}   ▼ ${downCount}`, PAD, PAD + HEADER + H + FOOTER / 2);
-      ctx.textAlign = "right";
-      ctx.fillText("cryptotime.app", out.width - PAD, PAD + HEADER + H + FOOTER / 2);
 
       const dataUrl = out.toDataURL("image/png");
       const blob = await (await fetch(dataUrl)).blob();
