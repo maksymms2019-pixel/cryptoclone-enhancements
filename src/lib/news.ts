@@ -74,16 +74,6 @@ export async function refreshNews() {
   return data;
 }
 
-export async function translateNewsItems(ids: string[]) {
-  const unique = Array.from(new Set(ids)).filter(Boolean).slice(0, 24);
-  if (unique.length === 0) return { translated: 0, failed: 0, requested: 0, already: 0 };
-  const { data, error } = await supabase.functions.invoke("news-aggregator", {
-    body: { translate_ids: unique },
-  });
-  if (error) throw error;
-  return data as { ok?: boolean; translated?: number; failed?: number; requested?: number; found?: number; already?: number; error?: string };
-}
-
 export async function bumpClick(id: string) {
   try {
     await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)("bump_news_click", { _id: id });
