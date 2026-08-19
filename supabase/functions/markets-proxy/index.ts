@@ -176,8 +176,50 @@ async function callCoinGecko(body: Op): Promise<unknown> {
   throw new Error("unknown op");
 }
 
+// Hosts we are willing to re-serve images from (coin logos only).
+const ICON_HOSTS = new Set<string>([
+  "coin-images.coingecko.com",
+  "assets.coingecko.com",
+  "assets.coincap.io",
+  "s2.coinmarketcap.com",
+  "static.coingecko.com",
+]);
+
+async function serveIcon(raw: string): Promise<Response> {
+  let target: URL;
+  try {
+    target = new URL(raw);
+  } catch {
+    return new Response("bad icon url", { status: 400, headers: corsHeaders });
+  }
+  if (target.protocol !== "https:" || !ICON_HOSTS.has(target.hostname)) {
+    return new Response("host not allowed", { status: 403, headers: corsHeaders });
+  }
+  try {
+    const upstream = await fetch(target.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!upstream.ok) return new Response("upstream error", { status: 502, headers: corsHeaders });
+    const bytes = await upstream.arrayBuffer();
+    return new Response(bytes, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": upstream.headers.get("content-type") ?? "image/png",
+        "Cache-Control": "public, max-age=86400, immutable",
+      },
+    });
+  } catch (e) {
+    console.error("[markets-proxy] icon", e);
+    return new Response("icon fetch failed", { status: 502, headers: corsHeaders });
+  }
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: { ...corsHeaders, "Access-Control-Allow-Methods": "GET, POST, OPTIONS" } });
+
+  const reqUrl = new URL(req.url);
+  const icon = reqUrl.searchParams.get("icon");
+  if (icon) return await serveIcon(icon);
+
+
 
   try {
     const body = (await req.json()) as Op;
