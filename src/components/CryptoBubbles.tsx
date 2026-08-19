@@ -4,6 +4,7 @@ import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { CoinRow } from "@/lib/markets";
 import { fmtPct, fmtUsd } from "@/lib/format";
+import { iconUrl } from "@/lib/icons";
 
 type Range = "1h" | "24h" | "7d" | "30d";
 
@@ -141,9 +142,20 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = strokeFor(b.pct);
         ctx.stroke();
+        // One vertically centred stack: icon → symbol → percent.
+        const hasText = b.r >= 22;
+        const symSize = Math.max(11, Math.min(20, b.r * 0.40));
+        const pctSize = Math.max(10, Math.min(16, b.r * 0.30));
+        const iconS = b.r * (hasText ? 0.5 : 0.66);
+        const gap = Math.max(2, b.r * 0.07);
+        const stackH = hasText ? iconS + gap + symSize + gap * 0.6 + pctSize : iconS;
+        const stackTop = b.y - stackH / 2;
+        const iconCy = stackTop + iconS / 2;
+        const symCy = stackTop + iconS + gap + symSize / 2;
+        const pctCy = symCy + symSize / 2 + gap * 0.6 + pctSize / 2;
         if (b.img?.complete && b.img.naturalWidth) {
-          const s = b.r * 0.5;
-          const iy = b.y - b.r * 0.42;
+          const s = iconS;
+          const iy = iconCy;
           ctx.save();
           ctx.beginPath();
           ctx.arc(b.x, iy, s / 2, 0, Math.PI * 2);
@@ -153,8 +165,8 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
           } catch { /* ignore */ }
           ctx.restore();
         } else {
-          const s = b.r * 0.5;
-          const iy = b.y - b.r * 0.42;
+          const s = iconS;
+          const iy = iconCy;
           ctx.save();
           ctx.beginPath();
           ctx.arc(b.x, iy, s / 2, 0, Math.PI * 2);
@@ -167,19 +179,17 @@ export function CryptoBubbles({ coins, range = "24h" }: { coins: CoinRow[]; rang
           ctx.fillText(b.symbol.charAt(0).toUpperCase(), b.x, iy);
           ctx.restore();
         }
-        if (b.r >= 22) {
+        if (hasText) {
           ctx.save();
           ctx.shadowColor = "rgba(0,0,0,.55)";
           ctx.shadowBlur = 3;
           ctx.fillStyle = "#F4F7FA";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          const symSize = Math.max(11, Math.min(20, b.r * 0.40));
           ctx.font = `800 ${symSize}px Inter, sans-serif`;
-          ctx.fillText(b.symbol.toUpperCase(), b.x, b.y + b.r * 0.05);
-          const pctSize = Math.max(10, Math.min(16, b.r * 0.30));
+          ctx.fillText(b.symbol.toUpperCase(), b.x, symCy);
           ctx.font = `700 ${pctSize}px Inter, sans-serif`;
-          ctx.fillText(fmtPct(b.pct, 1), b.x, b.y + b.r * 0.42);
+          ctx.fillText(fmtPct(b.pct, 1), b.x, pctCy);
           ctx.restore();
         }
       }
